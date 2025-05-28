@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Riskcovry Test Data Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+        background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+      }
+      .card {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+      }
+      input,
+      textarea {
+        transition: all 0.3s ease;
+      }
+      input:focus,
+      textarea:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+      }
+      button {
+        transition: all 0.3s ease;
+      }
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      }
+      #dataTable th,
+      #dataTable td {
+        padding: 14px 18px;
+        white-space: nowrap;
+        line-height: 1.5;
+      }
+      #dataTable thead {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: rgba(249, 250, 251, 0.95);
+        backdrop-filter: blur(5px);
+      }
+      #scenarioList li {
+        transition: background-color 0.2s ease;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        border-radius: 8px;
+      }
+      #scenarioList li:hover {
+        background-color: #eff6ff;
+      }
+      .tooltip {
+        position: relative;
+      }
+      .tooltip .tooltip-text {
+        visibility: hidden;
+        position: absolute;
+        z-index: 20;
+        bottom: 125%;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: #1f2937;
+        color: white;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        white-space: normal;
+        width: 200px;
+        text-align: center;
+      }
+      .tooltip:hover .tooltip-text {
+        visibility: visible;
+      }
+      #customDialog {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+        transform: scale(0.95);
+      }
+      #customDialog.show {
+        transform: scale(1);
+        opacity: 1;
+      }
+      @media (max-width: 768px) {
+        .card {
+          padding: 1rem;
+        }
+        .input-group {
+          flex-direction: column;
+        }
+        #dataTable tr {
+          display: flex;
+          flex-direction: column;
+          background: white;
+          padding: 1rem;
+          border-radius: 0.75rem;
+          margin-bottom: 0.5rem;
+        }
+        #dataTable th,
+        #dataTable td {
+          display: block;
+          text-align: left;
+        }
+        #dataTable
+          th:not(
+            :first-child,
+            :nth-child(2),
+            :nth-child(3),
+            :nth-child(4),
+            :nth-child(5)
+          ) {
+          display: none;
+        }
+        #dataTable
+          td:not(
+            :first-child,
+            :nth-child(2),
+            :nth-child(3),
+            :nth-child(4),
+            :nth-child(5)
+          ) {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body class="flex justify-center items-start min-h-screen py-8">
+    <div class="card p-6 md:p-8 rounded-2xl shadow-md w-full max-w-6xl mx-4">
+      <div class="flex items-center justify-center mb-8">
+        <img src="./logo.png" alt="Riskcovry Logo" class="h-20 mr-3" />
+        <h1 class="text-3xl font-semibold text-center text-gray-800">
+          Test Data Generator
+        </h1>
+      </div>
+      <form id="inputForm" class="space-y-6">
+        <div class="bg-gray-50 p-6 rounded-xl">
+          <label
+            for="scenarioInput"
+            class="block text-sm font-medium text-gray-700 mb-2 leading-6"
+          >
+            Scenario
+          </label>
+          <div class="input-group flex flex-col md:flex-row gap-3">
+            <input
+              type="text"
+              id="scenarioInput"
+              class="flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-800 focus:border-blue-500 focus:ring-0 placeholder-gray-400 leading-6"
+              placeholder="e.g., Expired within 30 days HDFC 2W comprehensive with all addons without discounts"
+            />
+            <button
+              type="button"
+              id="addScenarioBtn"
+              class="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              Add
+            </button>
+          </div>
+          <label
+            for="productCodeInput"
+            class="block text-sm font-medium text-gray-700 mt-4 mb-2 leading-6"
+          >
+            Product Code
+          </label>
+          <input
+            type="text"
+            id="productCodeInput"
+            class="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-800 focus:border-blue-500 focus:ring-0 placeholder-gray-400 leading-6"
+            placeholder="e.g., HDFC_2W_COMP_123 (optional)"
+          />
+          <ul id="scenarioList" class="mt-4 space-y-2"></ul>
+        </div>
+        <div class="bg-gray-50 p-6 rounded-xl">
+          <label
+            for="proposal_overrides"
+            class="block text-sm font-medium text-gray-700 mb-2 leading-6"
+          >
+            Proposal Overrides
+          </label>
+          <textarea
+            id="proposal_overrides"
+            name="proposal_overrides"
+            rows="5"
+            class="block w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-800 focus:border-blue-500 focus:ring-0 placeholder-gray-400 leading-6 resize-y"
+            placeholder="e.g., Set manufacturing year to 2024, proposer first name to Anil"
+          ></textarea>
+        </div>
+        <div class="flex justify-center">
+          <button
+            type="submit"
+            id="generateBtn"
+            class="px-8 py-3 rounded-xl bg-blue-600 text-white text-base font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          >
+            Generate Test Data
+          </button>
+        </div>
+      </form>
+      <div id="loading" class="hidden text-center mt-8">
+        <svg
+          class="animate-spin h-8 w-8 mx-auto text-blue-500"
+          viewBox="0 0 24 24"
+        >
+          <circle
+            class="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            stroke-width="4"
+          ></circle>
+          <path
+            class="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8v8H4z"
+          ></path>
+        </svg>
+        <p class="text-gray-600 text-sm mt-2 leading-6">
+          Generating test data...
+        </p>
+      </div>
+      <div
+        id="error"
+        class="hidden text-center mt-6 bg-red-50 text-red-600 p-4 rounded-xl text-sm leading-6"
+      ></div>
+      <div
+        id="customDialog"
+        class="hidden fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50"
+      >
+        <div class="card p-6 rounded-xl max-w-md w-full text-center">
+          <p id="dialogMessage" class="text-sm text-gray-800 mb-4"></p>
+          <button
+            id="dialogCloseBtn"
+            class="px-5 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 focus:outline-none"
+          >
+            OK
+          </button>
+        </div>
+      </div>
+      <div id="results" class="hidden mt-10">
+        <h2 class="text-xl font-medium mb-4 text-gray-800">
+          Generated Test Data
+        </h2>
+        <div class="overflow-x-auto rounded-xl border border-gray-200">
+          <table id="dataTable" class="min-w-full divide-y divide-gray-100">
+            <thead class="bg-gray-50">
+              <tr>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Testcase ID
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Category
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Journey Type
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Registration Number
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Make Model
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Variant
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Registration Date
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  RTO
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Owned By
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Ownership Changed
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Previous Expiry Date
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider tooltip"
+                >
+                  Offset Previous Expiry Date
+                  <span class="tooltip-text"
+                    >Days offset from previous expiry for testing
+                    scenarios</span
+                  >
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Previous Insurer
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Previous TP Expiry Date
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider tooltip"
+                >
+                  Offset Previous TP Expiry Date
+                  <span class="tooltip-text"
+                    >Days offset for third-party expiry date</span
+                  >
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Previous TP Insurer
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Not Sure
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Know Previous TP Expiry Date
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Not Sure Previous TP Expiry Date
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Claim Taken
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Previous NCB
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Product Code
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Customer Name
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Contact Number
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  IDV
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider tooltip"
+                >
+                  NCB Two
+                  <span class="tooltip-text"
+                    >No-Claim Bonus for second policy aspect</span
+                  >
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Addons
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Discounts
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Select Tab
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Email
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  KYC
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  KYC Verification
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Proposal Questions
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Inspection Required
+                </th>
+                <th
+                  scope="col"
+                  class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider"
+                >
+                  Carrier Name
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-100"></tbody>
+          </table>
+        </div>
+        <div class="mt-6 flex justify-center">
+          <button
+            id="downloadBtn"
+            class="px-8 py-3 rounded-xl bg-teal-500 text-white text-base font-medium hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-2"
+          >
+            Download CSV
+          </button>
+        </div>
+      </div>
+      <div
+        id="success"
+        class="hidden text-center mt-6 bg-green-50 text-green-600 p-4 rounded-xl text-sm leading-6"
+      >
+        Test data generated successfully!
+      </div>
+    </div>
+    <script src="script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "name": "ai-automation",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon start"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "json5": "^2.2.3",
+    "nodemon": "^3.1.10",
+    "openai": "^4.103.0",
+    "sanitize-html": "^2.17.0",
+    "winston": "^3.17.0"
+  }
+}
