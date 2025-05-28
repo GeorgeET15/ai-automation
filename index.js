@@ -124,11 +124,17 @@ function cleanMarkdownResponse(content) {
 
 app.post("/api/parse", async (req, res) => {
   try {
-    const { scenarios, product_code, proposal_overrides } = req.body;
+    const { scenarios, proposal_overrides } = req.body;
     if (!scenarios || !Array.isArray(scenarios) || scenarios.length === 0) {
       throw new Error("At least one scenario is required");
     }
-    const sanitizedScenarios = scenarios.map((s) => sanitizeHtml(s.trim()));
+    if (!scenarios.every((s) => s.text && s.product_code)) {
+      throw new Error("Each scenario must have text and a product code");
+    }
+    const sanitizedScenarios = scenarios.map((s) => ({
+      text: sanitizeHtml(s.text.trim()),
+      product_code: sanitizeHtml(s.product_code.trim()),
+    }));
     const sanitizedOverrides = sanitizeHtml(proposal_overrides || {}, {
       allowedTags: [],
       allowedAttributes: {},
@@ -157,11 +163,10 @@ app.post("/api/parse", async (req, res) => {
     }
 
     const prompt = `
-      Parse natural language inputs for 4W/2W insurance test cases. Return JSON with: {"scenarios": [objects], "proposal_questions": object}. Extract insurance company, product code, expiry conditions, addons, discounts, and KYC from each scenario. Each scenario generates one test case.
+      Parse natural language inputs for 4W/2W insurance test cases. Return JSON with: {"scenarios": [objects], "proposal_questions": object}. Each scenario has text and product_code. Extract expiry conditions, addons, discounts, and KYC from scenario text. Derive insurance company from product_code prefix (before _4W_ or _2W_). Each scenario generates one test case.
 
       Inputs:
       - Scenarios: ${JSON.stringify(sanitizedScenarios)}
-      - Product Code: ${product_code || "null"}
       - Proposal Overrides: ${sanitizedOverrides}
       - Static Data: ${JSON.stringify(staticData)}
       - Current Date: ${currentDate}
@@ -182,15 +187,15 @@ app.post("/api/parse", async (req, res) => {
         - Company: GSTIN, name, DOB, PAN.
         - Address: Karnataka/Maharashtra, is_address_same, registration address.
         - Previous Policy: Rollover only, expiry dates match scenario.
-      - Insurance Company: Extract from scenario (e.g., "HDFC") for product_code prefix, carrier_name.
-      - Product Code: Use provided product_code if not null; else extract from scenario (e.g., "HDFC_2W_COMP_123") using regex /[A-Z0-9_]+/; else derive from insurer, vehicle type, and policy type (e.g., "HDFC_2W_COMPREHENSIVE").
+      - Insurance Company: Extract from product_code prefix (e.g., "BAJAJ" from "BAJAJ_4W_COMPREHENSIVE") for carrier_name, previous_insurer.
+      - Product Code: Use scenario.product_code; format expected as INSURER_VEHICLE_TYPE_POLICY_TYPE.
       - Expiry: If "expired within X days" or "rollover less than X days", set expiry_days to X; else default logic.
       - Addons: If "all addons", set include_all_addons to true. If "without addons" or omitted, set specified_addons to "". If "with specified addons X", set specified_addons to array of codes. Never return [] for specified_addons.
       - Discounts: If "with discounts X", include specified discounts; if "without discounts" or omitted, set specified_discounts to "". Never return [] for specified_discounts.
       - KYC: If "kyc X" (OVD, PAN, or CKYC Number), set specified_kyc to X; else null.
 
       Instructions:
-      - Scenarios fields: testcase_id (e.g., "[INSURANCE_COMPANY]_[VEHICLE_TYPE]_ROLLOVER_01"), journey_type, product_code, is_inspection_required, previous_ncb, manufacturing_year, vehicle_type, claim_taken, ownership_changed, idv, insurance_company, expiry_days (number or null), include_all_addons (boolean), specified_addons (array or ""), specified_discounts (array or ""), specified_kyc (string or null).
+      - Scenarios fields: testcase_id (e.g., "[INSURER]_[VEHICLE_TYPE]_ROLLOVER_01"), journey_type, product_code, is_inspection_required, previous_ncb, manufacturing_year, vehicle_type, claim_taken, ownership_changed, idv, insurance_company (from product_code), expiry_days (number or null), include_all_addons (boolean), specified_addons (array or ""), specified_discounts (array or ""), specified_kyc (string or null).
       - Dates: Calculate relative to ${currentDate}, format DD/MM/YYYY.
         - registration_date: New (${newBusinessStart}-${currentDate}), Rollover/Not Sure (${rolloverStart}-${lastYear}/12/31).
         - previous_expiry_date: For Rollover with "expired within X days" or "rollover less than X days", set within X days before ${currentDate}; else active (${activeExpiryStartStr}-${activeExpiryEndStr}) or expired (before ${expiredExpiryEndStr}).
@@ -201,7 +206,6 @@ app.post("/api/parse", async (req, res) => {
 
     logger.info("Sending /api/parse request", {
       scenarios: sanitizedScenarios,
-      product_code,
     });
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
@@ -209,7 +213,7 @@ app.post("/api/parse", async (req, res) => {
         {
           role: "system",
           content:
-            'Output valid JSON only, no explanations, no Markdown formatting. Return an object with "scenarios" (array) and "proposal_questions" (object). Prioritize provided product_code, then extract from scenario, then derive. Set expiry_days for "expired within X days" or "rollover less than X days". Include include_all_addons for "all addons". Set specified_discounts to "" for "without discounts" or omitted; never []. Set specified_addons to "" for "without addons" or omitted; never []. Set specified_kyc for "kyc X". Dates must be relative to current date.',
+            'Output valid JSON only, no explanations, no Markdown formatting. Return an object with "scenarios" (array) and "proposal_questions" (object). Each scenario has text and product_code. Set expiry_days for "expired within X days" or "rollover less than X days". Include include_all_addons for "all addons". Set specified_discounts to "" for "without discounts" or omitted; never []. Set specified_addons to "" for "without addons" or omitted; never []. Set specified_kyc for "kyc X". Dates must be relative to current date.',
         },
         { role: "user", content: prompt },
       ],
@@ -295,7 +299,7 @@ app.post("/api/generate", async (req, res) => {
         - KYC: Randomly select ONE option from staticData.kyc_format (OVD, PAN, or CKYC Number) for each test case if not specified_kyc in scenario.
         - Address: Karnataka/Maharashtra.
         - PUC Expiry: 6-12 months from ${currentDate}.
-        - Insurance Company: From scenarios for carrier_name, product_code prefix.
+        - Insurance Company: Use scenario.insurance_company (from product_code prefix) for carrier_name, previous_insurer, previous_tp_insurer.
         - Discounts: From scenarios.specified_discounts if non-empty array, format as [{"discount_code": "CODE", "sa": ""}]; else "". Never return [].
         - Addons: From scenarios.specified_addons if non-empty array or include_all_addons true, format as [{"insurance_cover_code": "CODE"}]; else "". Never return [].
 
@@ -324,7 +328,7 @@ app.post("/api/generate", async (req, res) => {
         {
           role: "system",
           content:
-            'Output valid JSON array only, no explanations, no Markdown formatting. Return an array of objects with fields as specified. Ensure addons, kyc, discounts, and proposal_questions formats are exact. KYC must include one randomly selected option if not specified_kyc. Discounts "" if specified_discounts empty or not provided; never []. Addons "" if specified_addons empty and include_all_addons false; never []. Use expiry_days for previous_expiry_date if provided. Dates must be relative to current date.',
+            'Output valid JSON array only, no explanations, no Markdown formatting. Return an array of objects with fields as specified. Ensure addons, kyc, discounts, and proposal_questions formats are exact. KYC must include one randomly selected option if not specified_kyc. Discounts "" if specified_discounts empty or not provided; never []. Addons "" if specified_addons empty and include_all_addons false; never []. Use expiry_days for previous_expiry_date if provided. Use insurance_company from scenario for carrier_name, previous_insurer. Dates must be relative to current date.',
         },
         { role: "user", content: prompt },
       ],

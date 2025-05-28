@@ -1,5 +1,44 @@
 let testData = []; // Global scope for testData
 
+// Define headers globally
+const headers = [
+  "Testcase_id",
+  "category",
+  "journey_type",
+  "registration_number",
+  "make_model",
+  "variant",
+  "registration_date",
+  "rto",
+  "owned_by",
+  "is_ownership_changed",
+  "previous_expiry_date",
+  "offset_previous_expiry_date",
+  "previous_insurer",
+  "previous_tp_expiry_date",
+  "offset_previous_tp_expiry_date",
+  "previous_tp_insurer",
+  "not_sure",
+  "know_previous_tp_expiry_date",
+  "not_sure_previous_tp_expiry_date",
+  "claim_taken",
+  "previous_ncb",
+  "product_code",
+  "customer_name",
+  "contact_number",
+  "idv",
+  "NCB_two",
+  "addons",
+  "discounts",
+  "select_tab",
+  "email",
+  "kyc",
+  "kyc_verification",
+  "proposal_questions",
+  "is_inspection_required",
+  "carrier_name",
+];
+
 function getRandomAddons(
   isComprehensive,
   includePersonalAccident,
@@ -208,12 +247,6 @@ addScenarioBtn.addEventListener("click", () => {
     showCustomDialog('Scenario must include "2W" or "4W".');
     return;
   }
-  if (!scenarioText.match(/HDFC|ICICI|Royal Sundaram/i)) {
-    showCustomDialog(
-      "Scenario must include an insurance company (HDFC, ICICI, or Royal Sundaram)."
-    );
-    return;
-  }
   if (
     !scenarioText.match(/with all addons|without addons|with specified addons/i)
   ) {
@@ -259,43 +292,6 @@ document.getElementById("downloadBtn").onclick = () => {
     "Generating CSV with testData:",
     JSON.stringify(testData, null, 2)
   );
-  const headers = [
-    "Testcase_id",
-    "category",
-    "journey_type",
-    "registration_number",
-    "make_model",
-    "variant",
-    "registration_date",
-    "rto",
-    "owned_by",
-    "is_ownership_changed",
-    "previous_expiry_date",
-    "offset_previous_expiry_date",
-    "previous_insurer",
-    "previous_tp_expiry_date",
-    "offset_previous_tp_expiry_date",
-    "previous_tp_insurer",
-    "not_sure",
-    "know_previous_tp_expiry_date",
-    "not_sure_previous_tp_expiry_date",
-    "claim_taken",
-    "previous_ncb",
-    "product_code",
-    "customer_name",
-    "contact_number",
-    "idv",
-    "NCB_two",
-    "addons",
-    "discounts",
-    "select_tab",
-    "email",
-    "kyc",
-    "kyc_verification",
-    "proposal_questions",
-    "is_inspection_required",
-    "carrier_name",
-  ];
   const csvRows = testData.map((row, index) => {
     console.log(`Processing CSV row ${index}:`, JSON.stringify(row, null, 2));
     return headers.map((h) => escapeCsvValue(row[h], h)).join(",");
@@ -330,25 +326,31 @@ document.getElementById("inputForm").addEventListener("submit", async (e) => {
     const scenarioInputs = Array.from(scenarioList.querySelectorAll("span"))
       .map((span) => span.textContent.trim())
       .filter((value) => value);
-    const productCode = document
+    const productCodes = document
       .getElementById("productCodeInput")
-      .value.trim();
+      .value.split(",")
+      .map((s) => s.trim())
+      .filter((s) => s);
     const proposalOverrides = document
       .getElementById("proposal_overrides")
       .value.trim();
 
-    const formData = {
-      scenarios: scenarioInputs,
-      product_code: productCode || null,
-      proposal_overrides: proposalOverrides,
-    };
-
-    if (!formData.scenarios.length) {
+    if (!scenarioInputs.length) {
       showCustomDialog("At least one scenario is required");
       throw new Error("At least one scenario is required");
     }
+    if (productCodes.length !== scenarioInputs.length) {
+      showCustomDialog(
+        "Number of product codes must match number of scenarios"
+      );
+      throw new Error("Product code count mismatch");
+    }
 
-    console.log("Form data:", formData);
+    console.log("Form data:", {
+      scenarios: scenarioInputs,
+      productCodes,
+      proposalOverrides,
+    });
 
     let structuredData;
     try {
@@ -356,7 +358,13 @@ document.getElementById("inputForm").addEventListener("submit", async (e) => {
       const parseResponse = await fetch("http://localhost:3000/api/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          scenarios: scenarioInputs.map((text, i) => ({
+            text,
+            product_code: productCodes[i],
+          })),
+          proposal_overrides: proposalOverrides,
+        }),
       });
 
       if (!parseResponse.ok) {
@@ -368,7 +376,8 @@ document.getElementById("inputForm").addEventListener("submit", async (e) => {
       console.log("Received /api/parse response:", structuredData);
     } catch (parseError) {
       console.error("Parse request failed:", parseError.message);
-      error.textContent = "Failed to connect to server. Using mock data.";
+      error.textContent =
+        "Failed to connect to server. Ensure the server is running on http://localhost:3000. Using mock data.";
       error.classList.remove("hidden");
       structuredData = {
         scenarios: scenarioInputs.map((scenario, index) => {
@@ -396,19 +405,9 @@ document.getElementById("inputForm").addEventListener("submit", async (e) => {
                 .map((s) => s.trim().toUpperCase())
             : [];
           const vehicleType = scenario.match(/2W/i) ? "2W" : "4W";
-          const insurer = scenario.match(/HDFC/i)
-            ? "HDFC"
-            : scenario.match(/Royal Sundaram/i)
-            ? "Royal Sundaram"
-            : "ICICI";
-          const productCodeMatch = scenario.match(/[A-Z0-9_]+/);
-          const productCodeFinal =
-            productCode ||
-            (productCodeMatch
-              ? productCodeMatch[0]
-              : `${insurer}_${vehicleType}_${
-                  isComprehensive ? "COMPREHENSIVE" : "THIRD_PARTY"
-                }`);
+          const productCode = productCodes[index];
+          const productCodeParts = productCode.split("_");
+          const insurer = productCodeParts[0]; // Extract insurer from product code
           const kycMatch = scenario.match(/kyc (ovd|pan|ckyc number)/i);
           const specifiedKyc = kycMatch ? kycMatch[1] : null;
           return {
@@ -416,7 +415,7 @@ document.getElementById("inputForm").addEventListener("submit", async (e) => {
               expiryDays !== null ? "ROLLOVER" : "NEW"
             }_${String(index + 1).padStart(2, "0")}`,
             journey_type: expiryDays !== null ? "Rollover" : "New Business",
-            product_code: productCodeFinal,
+            product_code: productCode,
             is_inspection_required: expiryDays !== null ? "Yes" : "No",
             previous_ncb: expiryDays !== null ? "0%" : "20%",
             manufacturing_year: "2025",
@@ -509,7 +508,8 @@ document.getElementById("inputForm").addEventListener("submit", async (e) => {
       console.log("Received /api/generate response:", testData);
     } catch (genError) {
       console.error("Generate request failed:", genError.message);
-      error.textContent = "Failed to generate test data. Using mock data.";
+      error.textContent =
+        "Failed to generate test data. Ensure the server is running on http://localhost:3000. Using mock data.";
       error.classList.remove("hidden");
       testData = structuredData.scenarios.map((scenario) => {
         const dates = getDynamicDates(
@@ -536,18 +536,16 @@ document.getElementById("inputForm").addEventListener("submit", async (e) => {
           offset_previous_expiry_date: scenario.expiry_days
             ? String(scenario.expiry_days)
             : "",
-          previous_insurer: scenario.insurance_company || "HDFC",
+          previous_insurer: scenario.insurance_company,
           previous_tp_expiry_date: dates.previous_tp_expiry_date,
           offset_previous_tp_expiry_date: "",
-          previous_tp_insurer: scenario.insurance_company || "HDFC",
+          previous_tp_insurer: scenario.insurance_company,
           not_sure: "",
           know_previous_tp_expiry_date: "Yes",
           not_sure_previous_tp_expiry_date: "",
           claim_taken: scenario.claim_taken || "No",
           previous_ncb: scenario.previous_ncb || "0%",
-          product_code:
-            scenario.product_code ||
-            `${scenario.insurance_company}_${scenario.vehicle_type}_COMPREHENSIVE`,
+          product_code: scenario.product_code,
           customer_name: "Nisha",
           contact_number: "8970985822",
           idv:
@@ -600,7 +598,7 @@ document.getElementById("inputForm").addEventListener("submit", async (e) => {
             NO_PA_Cover: "",
           },
           is_inspection_required: scenario.is_inspection_required || "No",
-          carrier_name: scenario.insurance_company || "HDFC",
+          carrier_name: scenario.insurance_company,
         };
       });
     }
