@@ -18,14 +18,36 @@ const logger = winston.createLogger({
   ],
 });
 
-// Function to get current date in DD/MM/YYYY format
-function getCurrentDate() {
-  const date = new Date();
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
-}
+// Insurer mapping from CSV
+const insurerMap = {
+  BAJAJ: "Bajaj Allianz General Insurance Co. Ltd.",
+  BHARTI: "Bharti AXA General Insurance Co. Ltd.",
+  CHOLAMANDALAM: "Cholamandalam MS General Insurance Co. Ltd.",
+  FUTURE: "Future Generali India Insurance Co. Ltd.",
+  HDFC: "HDFC ERGO General Insurance Co. Ltd.",
+  ICICI: "ICICI Lombard General Insurance Co. Ltd.",
+  IFFCO: "IFFCO Tokio General Insurance Co. Ltd.",
+  KOTAK: "Kotak Mahindra General Insurance Co. Ltd.",
+  LIBERTY: "Liberty General Insurance Ltd.",
+  MAGMA: "Magma HDI General Insurance Co. Ltd.",
+  NATIONAL: "National Insurance Co. Ltd.",
+  RELIANCE: "Reliance General Insurance Co. Ltd.",
+  ROYAL: "Royal Sundaram General Insurance Co. Ltd.",
+  SHRIRAM: "Shriram General Insurance Co. Ltd.",
+  SBI: "SBI General Insurance Co. Ltd.",
+  TATA: "Tata AIG General Insurance Co. Ltd.",
+  NEWINDIA: "The New India Assurance Co. Ltd.",
+  ORIENTAL: "The Oriental Insurance Co. Ltd.",
+  UNITED: "United India Insurance Co. Ltd.",
+  UNIVERSAL: "Universal Sompo General Insurance Co. Ltd.",
+  GODIGIT: "Go Digit General Insurance Ltd.",
+  ACKO: "Acko General Insurance Ltd.",
+  ZUNO: "Zuno General Insurance Ltd.",
+  RAHEJA: "Raheja QBE General Insurance Co. Ltd.",
+  NAVI: "Navi General Insurance Ltd.",
+};
+
+const insurerList = Object.values(insurerMap);
 
 // Static data
 const staticData = {
@@ -82,6 +104,20 @@ const staticData = {
     previous_tp_policy_carrier_code: "",
     previous_tp_policy_number: "",
     NO_PA_Cover: "",
+    proposer_first_name: "Nisha",
+    proposer_last_name: "Kalpathri",
+    proposer_salutation: "Ms",
+    proposer_dob: "28/10/1994",
+    proposer_age: "30",
+    proposer_alternate_number: "",
+    proposer_marital_status: "Single",
+    proposer_pan: "GTTPK1088Q",
+    proposer_gstin: "",
+    proposer_annual_income: "500000",
+    proposer_occupation: "Engineer",
+    proposer_title: "Ms",
+    company_details: "",
+    company_date_of_incorporation: "01/01/2015",
   },
   addons: [
     "ZERO_DEPRECIATION_COVER",
@@ -122,6 +158,42 @@ function cleanMarkdownResponse(content) {
   }
 }
 
+function formatDate(date) {
+  if (!(date instanceof Date) || isNaN(date)) {
+    date = new Date("2024-01-01");
+  }
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+function getRandomDate(start, end) {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  if (isNaN(startDate) || isNaN(endDate)) {
+    return new Date("2024-01-01");
+  }
+  const timeDiff = endDate - startDate;
+  const randomTime = startDate.getTime() + Math.random() * timeDiff;
+  const result = new Date(randomTime);
+  return isNaN(result) ? new Date("2024-01-01") : result;
+}
+
+function generateRegistrationNumber(rto = "KA01") {
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const numbers = "0123456789";
+  const letterPart = Array(2)
+    .fill()
+    .map(() => letters[Math.floor(Math.random() * letters.length)])
+    .join("");
+  const numberPart = Array(4)
+    .fill()
+    .map(() => numbers[Math.floor(Math.random() * numbers.length)])
+    .join("");
+  return `${rto}${letterPart}${numberPart}`;
+}
+
 app.post("/api/parse", async (req, res) => {
   try {
     const { scenarios, proposal_overrides } = req.body;
@@ -140,67 +212,69 @@ app.post("/api/parse", async (req, res) => {
       allowedAttributes: {},
     });
 
-    const currentDate = getCurrentDate();
+    const currentDate = formatDate(new Date("2025-05-28"));
     const currentYear = new Date().getFullYear();
     const lastYear = currentYear - 1;
     const newBusinessStart = `01/01/${lastYear}`;
     const rolloverStart = `01/01/${currentYear - 7}`;
-    const activeExpiryStart = new Date();
+    const activeExpiryStart = new Date("2025-05-28");
     activeExpiryStart.setDate(activeExpiryStart.getDate() - 90);
     const activeExpiryStartStr = formatDate(activeExpiryStart);
-    const activeExpiryEnd = new Date();
+    const activeExpiryEnd = new Date("2025-05-28");
     activeExpiryEnd.setDate(activeExpiryEnd.getDate() + 30);
     const activeExpiryEndStr = formatDate(activeExpiryEnd);
-    const expiredExpiryEnd = new Date();
+    const expiredExpiryEnd = new Date("2025-05-28");
     expiredExpiryEnd.setDate(expiredExpiryEnd.getDate() - 91);
     const expiredExpiryEndStr = formatDate(expiredExpiryEnd);
 
-    function formatDate(date) {
-      const day = String(date.getDate()).padStart(2, "0");
-      const month = String(date.getMonth() + 1).padStart(2, "0");
-      const year = date.getFullYear();
-      return `${day}/${month}/${year}`;
-    }
-
     const prompt = `
-      Parse natural language inputs for 4W/2W insurance test cases. Return JSON with: {"scenarios": [objects], "proposal_questions": object}. Each scenario has text and product_code. Extract expiry conditions, addons, discounts, and KYC from scenario text. Derive insurance company from product_code prefix (before _4W_ or _2W_). Each scenario generates one test case.
+      Parse natural language inputs for 4W/2W insurance test cases. Return JSON with: {"scenarios": [objects], "proposal_questions": object}. Each scenario has text and product_code. Extract expiry conditions, addons, discounts, KYC, and ownership from scenario text. Derive insurance company and vehicle type from product_code (no fixed format; extract 2W/4W if present, else default to 2W).
 
       Inputs:
       - Scenarios: ${JSON.stringify(sanitizedScenarios)}
       - Proposal Overrides: ${sanitizedOverrides}
       - Static Data: ${JSON.stringify(staticData)}
+      - Insurer Mapping: ${JSON.stringify(insurerMap)}
       - Current Date: ${currentDate}
 
       Constraints:
-      - Scenarios: New Business, Not Sure, Rollover (Individual/Company, MMV & RTO change).
+      - Scenarios: New Business, Not Sure, Rollover (Individual/Company).
         - New: Manufacturing year ${currentYear} or ${lastYear}.
         - Not Sure: Registration before or after Sep 2018, with/without third-party, ownership changed/not.
-        - Rollover: Registration before or after Sep 2018, policy type (Third Party/Comprehensive/SAOD), claim (Yes/No), NCB (0, 20, 25, 35, 45, 50%), expiry (Active: within 90 days of current date; Expired: as specified in scenario, e.g., "expired within X days" or "rollover less than X days").
+        - Rollover: Registration before or after Sep 2018, policy type (Third Party/Comprehensive/SAOD), claim (Yes/No), NCB (0, 20, 25, 35, 45, 50%), expiry (Active: within 90 days; Expired: as specified).
         - Third-Party Tenure: 4W (1/3 years), 2W (1/5 years) from registration date.
         - IDV: 100000-2000000.
         - NCB: Rollover only.
       - Proposal:
-        - Vehicle: Manufacturing year (registration year or -1), registration number (optional for New), engine/chassis, financier, PUC (Yes, No for negative).
+        - Vehicle: Manufacturing year (registration year or -1), registration number (generate KA01XX1234 format), engine/chassis, financier, PUC (Yes, No for negative).
         - Nominee: If Personal Accident addon.
         - Contact: Email, phone.
-        - Individual: DOB (age ≥ 18), gender, title, Aadhaar, marital, PAN, occupation.
-        - Company: GSTIN, name, DOB, PAN.
+        - Individual: Include CUSTOMER_QUESTIONS, exclude COMPANY_QUESTIONS.
+        - Company: Include COMPANY_QUESTIONS, exclude CUSTOMER_QUESTIONS.
         - Address: Karnataka/Maharashtra, is_address_same, registration address.
-        - Previous Policy: Rollover only, expiry dates match scenario.
-      - Insurance Company: Extract from product_code prefix (e.g., "BAJAJ" from "BAJAJ_4W_COMPREHENSIVE") for carrier_name, previous_insurer.
-      - Product Code: Use scenario.product_code; format expected as INSURER_VEHICLE_TYPE_POLICY_TYPE.
-      - Expiry: If "expired within X days" or "rollover less than X days", set expiry_days to X; else default logic.
-      - Addons: If "all addons", set include_all_addons to true. If "without addons" or omitted, set specified_addons to "". If "with specified addons X", set specified_addons to array of codes. Never return [] for specified_addons.
-      - Discounts: If "with discounts X", include specified discounts; if "without discounts" or omitted, set specified_discounts to "". Never return [] for specified_discounts.
+        - Previous Policy: Rollover only, expiry dates match scenario, previous_insurer differs from current insurer.
+      - Insurance Company: Use full name from insurerMap for carrier_name, previous_insurer (different for Rollover).
+      - Vehicle Type: Extract 2W/4W (case-insensitive) from product_code, else default to 2W.
+      - Expiry: For Rollover, if "expired within X days" or "rollover less than X days", set expiry_days to X; ensure previous_expiry_date is at least 1 year after manufacturing_year.
+      - Addons: If "all addons", set include_all_addons to true. If "without addons" or omitted, set specified_addons to "". If "with specified addons X", set specified_addons to array of codes. Never return [].
+      - Discounts: If "with discounts X", include specified discounts; if "without discounts" or omitted, set specified_discounts to "". Never return [].
       - KYC: If "kyc X" (OVD, PAN, or CKYC Number), set specified_kyc to X; else null.
+      - Proposal Questions: Apply overrides, exclude based on ownership:
+        - Exclude PREVIOUS_POLICY_QUESTIONS for New Business or Not Sure (Comprehensive/Third Party).
+        - Exclude COMPANY_QUESTIONS if owned_by is "individual" or null.
+        - Exclude CUSTOMER_QUESTIONS if owned_by is "company".
+        - Exclude NOMINEE_QUESTIONS if PERSONAL_ACCIDENT is not present or owned_by is "company".
+        - Exclude ADDITIONAL_QUESTION if PERSONAL_ACCIDENT is present or owned_by is "company".
+        - Exclude ADDITIONAL_OD_QUESTION for New Business.
+        - Set registration_number to a generated value (e.g., KA01XX1234).
 
       Instructions:
-      - Scenarios fields: testcase_id (e.g., "[INSURER]_[VEHICLE_TYPE]_ROLLOVER_01"), journey_type, product_code, is_inspection_required, previous_ncb, manufacturing_year, vehicle_type, claim_taken, ownership_changed, idv, insurance_company (from product_code), expiry_days (number or null), include_all_addons (boolean), specified_addons (array or ""), specified_discounts (array or ""), specified_kyc (string or null).
+      - Scenarios fields: testcase_id (e.g., "[INSURER]_[VEHICLE_TYPE]_ROLLOVER_01"), journey_type, product_code, is_inspection_required, previous_ncb, manufacturing_year, vehicle_type, claim_taken, ownership_changed, idv, insurance_company, expiry_days (number or null), include_all_addons (boolean), specified_addons (array or ""), specified_discounts (array or ""), specified_kyc (string or null), owned_by ("Individual" or "Company").
       - Dates: Calculate relative to ${currentDate}, format DD/MM/YYYY.
         - registration_date: New (${newBusinessStart}-${currentDate}), Rollover/Not Sure (${rolloverStart}-${lastYear}/12/31).
-        - previous_expiry_date: For Rollover with "expired within X days" or "rollover less than X days", set within X days before ${currentDate}; else active (${activeExpiryStartStr}-${activeExpiryEndStr}) or expired (before ${expiredExpiryEndStr}).
+        - previous_expiry_date: For Rollover with expiry_days, set within X days before ${currentDate}, at least 1 year after manufacturing_year; else active (${activeExpiryStartStr}-${activeExpiryEndStr}) or expired (before ${expiredExpiryEndStr}).
       - Apply proposal overrides to default_proposal_questions.
-      - Defaults: previous_ncb="0%", is_inspection_required="No", idv=500000, valid_puc="Yes".
+      - Defaults: previous_ncb="0%", is_inspection_required="No", idv=500000, valid_puc="Yes", owned_by="Individual".
       - Output: Valid JSON, no Markdown.
     `;
 
@@ -213,7 +287,7 @@ app.post("/api/parse", async (req, res) => {
         {
           role: "system",
           content:
-            'Output valid JSON only, no explanations, no Markdown formatting. Return an object with "scenarios" (array) and "proposal_questions" (object). Each scenario has text and product_code. Set expiry_days for "expired within X days" or "rollover less than X days". Include include_all_addons for "all addons". Set specified_discounts to "" for "without discounts" or omitted; never []. Set specified_addons to "" for "without addons" or omitted; never []. Set specified_kyc for "kyc X". Dates must be relative to current date.',
+            'Output valid JSON only, no explanations, no Markdown formatting. Return an object with "scenarios" (array) and "proposal_questions" (object). Extract vehicle_type (case-insensitive 2W/4W) from product_code, default to 2W if not found. Set expiry_days for "expired within X days" or "rollover less than X days". Include include_all_addons for "all addons". Set specified_discounts to "" for "without discounts"; never []. Set specified_addons to "" for "without addons"; never []. Set specified_kyc for "kyc X". Set owned_by from scenario or default to "Individual". Use full insurer names from mapping. Ensure previous_insurer differs from current insurer for Rollover. Ensure previous_expiry_date is at least 1 year after manufacturing_year for Rollover. Set registration_number to generated value (KA01XX1234 format).',
         },
         { role: "user", content: prompt },
       ],
@@ -230,6 +304,8 @@ app.post("/api/parse", async (req, res) => {
         "Response missing required fields: scenarios or proposal_questions"
       );
     }
+    parsedContent.proposal_questions.registration_number =
+      generateRegistrationNumber();
     res.json(parsedContent);
   } catch (error) {
     logger.error("Parse endpoint error", {
@@ -247,103 +323,276 @@ app.post("/api/generate", async (req, res) => {
       throw new Error("Scenarios are required");
     }
 
-    const currentDate = getCurrentDate();
+    const currentDate = formatDate(new Date("2025-05-28"));
     const currentYear = new Date().getFullYear();
     const lastYear = currentYear - 1;
     const newBusinessStart = `01/01/${lastYear}`;
     const rolloverStart = `01/01/${currentYear - 7}`;
-    const pucStart = new Date();
-    const pucEnd = new Date(pucStart.setMonth(pucStart.getMonth() + 12));
+    const pucStart = new Date("2025-05-28");
+    const pucEnd = new Date(pucStart);
+    pucEnd.setMonth(pucEnd.getMonth() + 12);
     const pucEndStr = formatDate(pucEnd);
-    const activeExpiryStart = new Date();
+    const activeExpiryStart = new Date("2025-05-28");
     activeExpiryStart.setDate(activeExpiryStart.getDate() - 90);
     const activeExpiryStartStr = formatDate(activeExpiryStart);
-    const activeExpiryEnd = new Date();
+    const activeExpiryEnd = new Date("2025-05-28");
     activeExpiryEnd.setDate(activeExpiryEnd.getDate() + 30);
     const activeExpiryEndStr = formatDate(activeExpiryEnd);
-    const expiredExpiryEnd = new Date();
+    const expiredExpiryEnd = new Date("2025-05-28");
     expiredExpiryEnd.setDate(expiredExpiryEnd.getDate() - 91);
     const expiredExpiryEndStr = formatDate(expiredExpiryEnd);
 
-    function formatDate(date) {
-      const day = String(date.getDate()).padStart(2, "0");
-      const month = String(date.getMonth() + 1).padStart(2, "0");
-      const year = date.getFullYear();
-      return `${day}/${month}/${year}`;
-    }
+    const NOMINEE_QUESTIONS = [
+      "nominee_salutation",
+      "nominee_last_name",
+      "nominee_first_name",
+      "nominee_dob",
+      "nominee_age",
+      "nominee_gender",
+      "nominee_relation",
+      "nominee_details",
+    ];
+    const PREVIOUS_POLICY_QUESTIONS = [
+      "previous_policy_details",
+      "previous_policy_status",
+      "previous_policy_claim_taken",
+      "previous_policy_expiry_period",
+      "previous_policy_expiry_date",
+      "previous_policy_ncb",
+      "previous_policy_carrier_code",
+      "previous_policy_number",
+      "previous_policy_type",
+      "previous_tp_policy_expiry_date",
+      "previous_tp_policy_start_date",
+      "previous_tp_policy_number",
+      "previous_tp_policy_carrier_code",
+    ];
+    const COMPANY_QUESTIONS = [
+      "company_details",
+      "company_name",
+      "company_gstin",
+      "company_date_of_incorporation",
+    ];
+    const CUSTOMER_QUESTIONS = [
+      "individual_details",
+      "proposer_first_name",
+      "proposer_last_name",
+      "proposer_salutation",
+      "proposer_dob",
+      "proposer_age",
+      "proposer_alternate_number",
+      "proposer_marital_status",
+      "proposer_pan",
+      "proposer_gstin",
+      "proposer_annual_income",
+      "proposer_occupation",
+      "proposer_title",
+    ];
+    const ADDITIONAL_QUESTION = ["additional_info", "NO_PA_Cover"];
+    const ADDITIONAL_OD_QUESTION = ["additional_od_info"];
+    const NOT_SURE_OD_QUESTIONS = [
+      "previous_policy_expiry_date",
+      "previous_policy_type",
+      "previous_policy_expiry_period",
+      "previous_policy_number",
+      "previous_policy_carrier_code",
+    ];
 
-    const prompt = `
-      Generate 4W/2W insurance test data. Return JSON array of objects with fields: Testcase_id, category, journey_type, registration_number, make_model, variant, registration_date, rto, owned_by, is_ownership_changed, previous_expiry_date, offset_previous_expiry_date, previous_insurer, previous_tp_expiry_date, offset_previous_tp_expiry_date, previous_tp_insurer, not_sure, know_previous_tp_expiry_date, not_sure_previous_tp_expiry_date, claim_taken, previous_ncb, product_code, customer_name, contact_number, idv, NCB_two, addons, discounts, select_tab, email, kyc, kyc_verification, proposal_questions, is_inspection_required, carrier_name.
+    const testData = scenarios.map((scenario) => {
+      const productCodeUpper = scenario.product_code.toUpperCase();
+      const vehicleType = productCodeUpper.includes("2W")
+        ? "2W"
+        : productCodeUpper.includes("4W")
+        ? "4W"
+        : "2W";
+      const insurerPrefix = scenario.product_code.split("_")[0].toUpperCase();
+      const currentInsurer = insurerMap[insurerPrefix] || insurerPrefix;
 
-      Inputs:
-      - Scenarios: ${JSON.stringify(scenarios)}
-      - Proposal Questions: ${JSON.stringify(proposal_questions)}
-      - Static Data: ${JSON.stringify(staticData)}
-      - Current Date: ${currentDate}
+      let previousInsurer = currentInsurer;
+      if (scenario.journey_type === "Rollover") {
+        const availableInsurers = insurerList.filter(
+          (insurer) => insurer !== currentInsurer
+        );
+        previousInsurer =
+          availableInsurers[
+            Math.floor(Math.random() * availableInsurers.length)
+          ];
+      }
 
-      Constraints:
-      - Scenarios: New Business, Not Sure, Rollover (Individual/Company, MMV & RTO change).
-        - New: Manufacturing year ${currentYear} or ${lastYear}.
-        - Not Sure: Registration before or after Sep 2018, with/without third-party, ownership changed/not.
-        - Rollover: Registration before or after Sep 2018, policy type (Third Party/Comprehensive/SAOD), claim (Yes/No), NCB (0, 20, 25, 35, 45, 50%), expiry as per expiry_days or default logic.
-        - Third-Party Tenure: 4W (1/3 years), 2W (1/5 years) from registration_date.
-        - IDV: 100000-2000000.
-        - NCB: Rollover only.
-      - Proposal:
-        - Vehicle: Manufacturing year (registration year or -1), registration number optional for New, engine/chassis, financier, PUC (Yes, No for blocked negative).
-        - Nominee: If Personal Accident addon.
-        - Individual: DOB (age ≥ 18).
-        - Company: GSTIN, name.
-        - Previous Policy: Rollover only, expiry dates match previous.
-      - Others:
-        - KYC: Randomly select ONE option from staticData.kyc_format (OVD, PAN, or CKYC Number) for each test case if not specified_kyc in scenario.
-        - Address: Karnataka/Maharashtra.
-        - PUC Expiry: 6-12 months from ${currentDate}.
-        - Insurance Company: Use scenario.insurance_company (from product_code prefix) for carrier_name, previous_insurer, previous_tp_insurer.
-        - Discounts: From scenarios.specified_discounts if non-empty array, format as [{"discount_code": "CODE", "sa": ""}]; else "". Never return [].
-        - Addons: From scenarios.specified_addons if non-empty array or include_all_addons true, format as [{"insurance_cover_code": "CODE"}]; else "". Never return [].
+      let registrationDate, previousExpiryDate, previousTpExpiryDate, pucExpiry;
+      const isNewBusiness = scenario.journey_type === "New Business";
+      if (isNewBusiness) {
+        registrationDate = getRandomDate(newBusinessStart, currentDate);
+      } else {
+        registrationDate = getRandomDate(rolloverStart, `31/12/${lastYear}`);
+      }
 
-      Instructions:
-      - One test case per scenario.
-      - Addons format: Array of objects, e.g., [{"insurance_cover_code": "ZERO_DEPRECIATION_COVER"}] if include_all_addons or specified_addons non-empty; else "". Never [].
-        - Comprehensive/SAOD: If include_all_addons, include all from staticData.addons; else use specified_addons if provided; else "".
-        - Third Party: Only PERSONAL_ACCIDENT if opted; else "".
-      - Discounts format: Array of objects, e.g., [{"discount_code": "ANTI_THEFT_DISCOUNT", "sa": ""}] if specified_discounts non-empty; else "". Never [].
-      - KYC format: Array with ONE object, e.g., [{"OVD": {...}}], use specified_kyc if provided.
-      - Proposal Questions format: Flattened object, e.g., {"manufacturing_year": "${currentYear}", ...}.
-        - puc_expiry: 6-12 months after ${currentDate} (up to ${pucEndStr}).
-        - previous_policy_expiry_date, previous_tp_policy_expiry_date: Match previous_expiry_date, previous_tp_expiry_date for Rollover.
-      - Dates: Calculate relative to ${currentDate}, format DD/MM/YYYY.
-        - registration_date: New (${newBusinessStart}-${currentDate}), Rollover/Not Sure (${rolloverStart}-${lastYear}/12/31).
-        - previous_expiry_date: For Rollover with expiry_days, set within expiry_days before ${currentDate}; else active (${activeExpiryStartStr}-${activeExpiryEndStr}) or expired (before ${expiredExpiryEndStr}).
-      - Defaults: make_model="HONDA CITY" (4W) or "HONDA ACTIVA" (2W), variant="Standard", rto="KA01", owned_by="Individual", customer_name="Nisha", contact_number="8970985822", email="nisha.kalpathri@riskcovry.com", category="four_wheeler" or "two_wheeler", kyc_verification="Pending".
-      - select_tab: If product_code includes "THIRD_PARTY", set to "Third Party"; else "Comprehensive".
-      - Output: Valid JSON array, no Markdown.
-    `;
+      const manufacturingYear =
+        scenario.manufacturing_year ||
+        new Date(registrationDate).getFullYear().toString();
+      if (scenario.journey_type === "Rollover") {
+        if (scenario.expiry_days !== null) {
+          const startDate = new Date("2025-05-28");
+          startDate.setDate(startDate.getDate() - scenario.expiry_days);
+          const endDate = new Date("2025-05-28");
+          endDate.setDate(endDate.getDate() - 1);
+          previousExpiryDate = getRandomDate(startDate, endDate);
+          const minExpiryDate = new Date(parseInt(manufacturingYear));
+          minExpiryDate.setFullYear(minExpiryDate.getFullYear() + 1);
+          if (previousExpiryDate < minExpiryDate || isNaN(previousExpiryDate)) {
+            previousExpiryDate = getRandomDate(minExpiryDate, currentDate);
+          }
+        } else {
+          const isActive = Math.random() > 0.5;
+          const minExpiryDate = new Date(parseInt(manufacturingYear));
+          minExpiryDate.setFullYear(minExpiryDate.getFullYear() + 1);
+          previousExpiryDate = getRandomDate(
+            isActive ? activeExpiryStartStr : minExpiryDate,
+            isActive ? activeExpiryEndStr : expiredExpiryEndStr
+          );
+        }
+        const tenureYears =
+          vehicleType === "4W"
+            ? Math.random() > 0.5
+              ? 1
+              : 3
+            : Math.random() > 0.5
+            ? 1
+            : 5;
+        previousTpExpiryDate = new Date(registrationDate);
+        previousTpExpiryDate.setFullYear(
+          previousTpExpiryDate.getFullYear() + tenureYears
+        );
+      } else {
+        previousExpiryDate = "";
+        previousTpExpiryDate = "";
+      }
 
-    logger.info("Sending /api/generate request", { scenarios });
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content:
-            'Output valid JSON array only, no explanations, no Markdown formatting. Return an array of objects with fields as specified. Ensure addons, kyc, discounts, and proposal_questions formats are exact. KYC must include one randomly selected option if not specified_kyc. Discounts "" if specified_discounts empty or not provided; never []. Addons "" if specified_addons empty and include_all_addons false; never []. Use expiry_days for previous_expiry_date if provided. Use insurance_company from scenario for carrier_name, previous_insurer. Dates must be relative to current date.',
+      const pucStart = new Date("2025-05-28");
+      const pucMonths = 6 + Math.floor(Math.random() * 7);
+      pucExpiry = new Date(pucStart);
+      pucExpiry.setMonth(pucExpiry.getMonth() + pucMonths);
+
+      const rejectedQuestionKeys = [];
+      const isNotSure =
+        scenario.journey_type === "Not Sure" &&
+        (scenario.product_code.includes("COMPREHENSIVE") ||
+          scenario.product_code.includes("THIRD_PARTY"));
+      const ownedBy = ["Individual", "Company"].includes(scenario.owned_by)
+        ? scenario.owned_by
+        : "Individual";
+      const hasPersonalAccident =
+        (Array.isArray(scenario.specified_addons) &&
+          scenario.specified_addons.includes("PERSONAL_ACCIDENT")) ||
+        (scenario.include_all_addons &&
+          staticData.addons.includes("PERSONAL_ACCIDENT"));
+
+      if (isNewBusiness || isNotSure) {
+        rejectedQuestionKeys.push(...PREVIOUS_POLICY_QUESTIONS);
+      }
+      if (isNotSure) {
+        rejectedQuestionKeys.push(...NOT_SURE_OD_QUESTIONS);
+      }
+      if (ownedBy === "Individual") {
+        rejectedQuestionKeys.push(...COMPANY_QUESTIONS);
+      }
+      if (ownedBy === "Company") {
+        rejectedQuestionKeys.push(...CUSTOMER_QUESTIONS);
+      }
+      if (!hasPersonalAccident || ownedBy === "Company") {
+        rejectedQuestionKeys.push(...NOMINEE_QUESTIONS);
+      }
+      if (hasPersonalAccident || ownedBy === "Company") {
+        rejectedQuestionKeys.push(...ADDITIONAL_QUESTION);
+      }
+      if (isNewBusiness) {
+        rejectedQuestionKeys.push(...ADDITIONAL_OD_QUESTION);
+      }
+
+      const filteredProposalQuestions = { ...proposal_questions };
+      rejectedQuestionKeys.forEach((key) => {
+        delete filteredProposalQuestions[key];
+      });
+
+      const registrationNumber = generateRegistrationNumber();
+
+      return {
+        Testcase_id:
+          scenario.testcase_id ||
+          `${currentInsurer}_${vehicleType}_${scenario.journey_type.toUpperCase()}_01`,
+        category: vehicleType === "4W" ? "four_wheeler" : "two_wheeler",
+        journey_type: scenario.journey_type || "Rollover",
+        registration_number: registrationNumber,
+        make_model: vehicleType === "4W" ? "HONDA CITY" : "HONDA ACTIVA",
+        variant: "Standard",
+        registration_date: formatDate(registrationDate),
+        rto: "KA01",
+        owned_by: ownedBy,
+        is_ownership_changed: scenario.ownership_changed || "No",
+        previous_expiry_date: previousExpiryDate
+          ? formatDate(previousExpiryDate)
+          : "",
+        offset_previous_expiry_date: scenario.expiry_days
+          ? String(scenario.expiry_days)
+          : "",
+        previous_insurer: previousInsurer,
+        previous_tp_expiry_date: previousTpExpiryDate
+          ? formatDate(previousTpExpiryDate)
+          : "",
+        offset_previous_tp_expiry_date: "",
+        previous_tp_insurer: previousInsurer,
+        not_sure: "",
+        know_previous_tp_expiry_date: "Yes",
+        not_sure_previous_tp_expiry_date: "",
+        claim_taken: scenario.claim_taken || "No",
+        previous_ncb: scenario.previous_ncb || "0%",
+        product_code: scenario.product_code,
+        customer_name:
+          ownedBy === "Individual" ? "Nisha" : "UMBO IDTECH PRIVATE LIMITED",
+        contact_number: "8970985822",
+        idv: scenario.idv || (vehicleType === "2W" ? 100000 : 500000),
+        NCB_two: "",
+        addons: scenario.specified_addons
+          ? scenario.specified_addons.map((code) => ({
+              insurance_cover_code: code,
+            }))
+          : scenario.include_all_addons
+          ? staticData.addons.map((code) => ({ insurance_cover_code: code }))
+          : "",
+        discounts: scenario.specified_discounts
+          ? scenario.specified_discounts.map((code) => ({
+              discount_code: code,
+              sa: "",
+            }))
+          : "",
+        select_tab: scenario.product_code.includes("THIRD_PARTY")
+          ? "Third Party"
+          : "Comprehensive",
+        email: "nisha.kalpathri@riskcovry.com",
+        kyc: scenario.specified_kyc
+          ? [
+              staticData.kyc_format.find(
+                (opt) =>
+                  Object.keys(opt)[0].toLowerCase() ===
+                  scenario.specified_kyc.toLowerCase()
+              ),
+            ]
+          : [
+              staticData.kyc_format[
+                Math.floor(Math.random() * staticData.kyc_format.length)
+              ],
+            ],
+        kyc_verification: "Pending",
+        proposal_questions: {
+          ...filteredProposalQuestions,
+          registration_number: registrationNumber,
         },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 6000,
+        is_inspection_required: scenario.is_inspection_required || "No",
+        carrier_name: currentInsurer,
+      };
     });
 
-    const rawContent = response.choices[0].message.content;
-    logger.info("Raw OpenAI response (/api/generate)", { rawContent });
-    const parsedContent = cleanMarkdownResponse(rawContent);
-    logger.info("Parsed response (/api/generate)", { parsedContent });
-
-    if (!Array.isArray(parsedContent)) {
-      throw new Error("Response must be an array");
-    }
-    res.json(parsedContent);
+    res.json(testData);
   } catch (error) {
     logger.error("Generate endpoint error", {
       error: error.message,
