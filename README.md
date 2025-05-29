@@ -1,10 +1,10 @@
 # Prompting Guide for Insurance Test Case Generation
 
-This guide helps you create prompts to generate test cases for 4-wheeler (4W) or 2-wheeler (2W) insurance policies using the application. Enter scenarios in the UI’s scenario input and product code(s) in the Product Code field. The app processes these to create test cases with fields like `Testcase_id`, `category`, `addons`, `discounts`, `previous_expiry_date`, and `carrier_name`. Results appear in the UI and export as a CSV file. If the server fails, an error like "Generation failed" displays.
+This guide helps you create prompts to generate test cases for 4-wheeler (4W) or 2-wheeler (2W) insurance policies using the application. Enter scenarios in the UI’s scenario input and product code(s) in the Product Code field. The app processes these to create test cases with fields like `Testcase_id`, `category`, `addons`, `discounts`, `previous_expiry_date`, `carrier_name`, `make_model`, and `variant`. Results appear in the UI and export as a CSV file. If the server fails, an error like "Generation failed" displays.
 
 ## How It Works
 
-- **Prompts**: Write natural language scenarios describing the test case (e.g., journey type, addons, discounts). Vehicle type (2W/4W) is derived from the product code, so it’s not needed in the scenario.
+- **Prompts**: Write natural language scenarios describing the test case (e.g., journey type, addons, discounts, optional model, and variant). Vehicle type (2W/4W) is derived from the product code, so it’s not needed in the scenario.
 - **Product Code**: Enter a product code (e.g., `RELIANCE_2W_THIRD_PARTY`) in the UI. For multiple scenarios, enter codes separated by commas (e.g., `HDFC_4W_COMPREHENSIVE,TATA_2W_THIRD_PARTY`).
 - **Insurer and Vehicle Type**: The insurer (e.g., `Reliance General Insurance Co. Ltd.`) and vehicle type (2W/4W) are extracted from the product code prefix and type (e.g., `RELIANCE` and `2W`).
 - **Output**: Each scenario generates one test case. Empty fields like `addons` or `discounts` are set to `""`. If the API fails, no mock data is used; instead, a "Generation failed" error appears.
@@ -12,12 +12,12 @@ This guide helps you create prompts to generate test cases for 4-wheeler (4W) or
 ### Example
 
 - **Scenarios**:
-  1. `rollover less than 90 days with all addons without discounts`
+  1. `rollover less than 90 days with all addons without discounts model Honda Activa variant Standard`
   2. `new business without addons without discounts`
 - **Product Codes**: `RELIANCE_2W_THIRD_PARTY,TATA_4W_COMPREHENSIVE`
 - **Output**:
-  - Test Case 1: 2W, Reliance, rollover, expiry within 90 days (e.g., `15/03/2025`), all addons, no discounts, `carrier_name`: `Reliance General Insurance Co. Ltd.`.
-  - Test Case 2: 4W, Tata, new business, no addons, no discounts, `carrier_name`: `Tata AIG General Insurance Co. Ltd.`.
+  - Test Case 1: 2W, Reliance, rollover, expiry within 90 days (e.g., `15/03/2025`), all addons, no discounts, `carrier_name`: `Reliance General Insurance Co. Ltd.`, `make_model`: `HONDA ACTIVA`, `variant`: `Standard`.
+  - Test Case 2: 4W, Tata, new business, no addons, no discounts, `carrier_name`: `Tata AIG General Insurance Co. Ltd.`, `make_model`: `HONDA CITY`, `variant`: `Standard`.
 
 ## Writing Prompts
 
@@ -31,7 +31,7 @@ Include these in your scenario, in any order. Required items are marked with an 
    - Policy Type: Optional (e.g., `COMPREHENSIVE`, `THIRD_PARTY`, `OD_ONLY`). Affects `select_tab`.
    - For multiple scenarios, enter codes in order, separated by commas.
    - Example: `RELIANCE_2W_THIRD_PARTY`, `TATA_4W_COMPREHENSIVE`.
-   - Sets: `product_code`, `carrier_name`, `previous_insurer`, `select_tab`, `category` (`four_wheeler` or `two_wheeler`), `make_model` (e.g., "HONDA CITY" for 4W, "HONDA ACTIVA" for 2W), `idv` (500000 for 4W, 100000 for 2W).
+   - Sets: `product_code`, `carrier_name`, `previous_insurer`, `select_tab`, `category` (`four_wheeler` or `two_wheeler`), `idv` (500000 for 4W, 100000 for 2W).
 
 2. **Journey Type and Expiry**:
 
@@ -78,12 +78,26 @@ Include these in your scenario, in any order. Required items are marked with an 
    - Sets `owned_by`: "Individual" or "Company".
    - Affects `proposal_questions`: Includes `CUSTOMER_QUESTIONS` for Individual, `COMPANY_QUESTIONS` for Company (mutually exclusive).
 
+7. **Model (Optional)**:
+
+   - Specify: `model X` where X is the vehicle model (e.g., `Honda Activa`, `Maruti Swift`).
+   - If omitted, defaults to `HONDA ACTIVA` (2W) or `HONDA CITY` (4W).
+   - Example: `model Honda Activa`.
+   - Sets `make_model`: e.g., `HONDA ACTIVA`.
+
+8. **Variant (Optional)**:
+
+   - Specify: `variant X` where X is the vehicle variant (e.g., `Standard`, `ZX`).
+   - If omitted, defaults to `Standard`.
+   - Example: `variant Standard`.
+   - Sets `variant`: e.g., `Standard`.
+
 ## Rules
 
 - **Required**:
   - Scenario: Addon instructions, discount instructions.
   - UI: Product code(s). For multiple scenarios, use commas (e.g., `RELIANCE_2W_THIRD_PARTY,TATA_4W_COMPREHENSIVE`).
-- **Case Insensitive**: `rollover` or `ROLLOVER`, `2W` or `2w` in product code.
+- **Case Insensitive**: `rollover` or `ROLLOVER`, `2W` or `2w` in product code, `model` or `MODEL`.
 - **Product Code**:
   - Provides vehicle type (2W/4W) and insurer; vehicle type defaults to 2W if unclear.
   - Number of codes must equal number of scenarios.
@@ -97,7 +111,7 @@ Include these in your scenario, in any order. Required items are marked with an 
 
 ## Tips
 
-- **Use Clear Scenarios**: Write simple phrases, e.g., `rollover less than 90 days with all addons without discounts`.
+- **Use Clear Scenarios**: Write simple phrases, e.g., `rollover less than 90 days with all addons without discounts model Honda Activa variant Standard`.
 - **Order Codes Correctly**: For multiple scenarios, list product codes in the same order as scenarios.
 - **Specify Expiry for Rollover**: Use `rollover less than X days` to set `previous_expiry_date`.
 - **Test One Scenario First**: Submit one scenario and code, check the CSV, then try multiple.
@@ -107,13 +121,15 @@ Include these in your scenario, in any order. Required items are marked with an 
 
 1. **Single Scenario**
 
-   - **Scenario**: `rollover less than 90 days with all addons without discounts kyc pan owned by individual`
+   - **Scenario**: `rollover less than 90 days with all addons without discounts model Honda Activa variant Standard kyc pan owned by individual`
    - **Product Code**: `RELIANCE_2W_THIRD_PARTY`
    - **Output**:
      - `Testcase_id`: `Reliance General Insurance Co. Ltd._2W_ROLLOVER_01`
      - `category`: `two_wheeler`
      - `journey_type`: `Rollover`
      - `registration_number`: `KA01XY1234`
+     - `make_model`: `HONDA ACTIVA`
+     - `variant`: `Standard`
      - `previous_expiry_date`: e.g., `15/03/2025`
      - `product_code`: `RELIANCE_2W_THIRD_PARTY`
      - `carrier_name`: `Reliance General Insurance Co. Ltd.`
@@ -127,7 +143,7 @@ Include these in your scenario, in any order. Required items are marked with an 
 2. **Two Scenarios**
 
    - **Scenarios**:
-     1. `rollover less than 15 days with specified addons engine protection without discounts owned by company`
+     1. `rollover less than 15 days with specified addons engine protection without discounts model Maruti Swift variant ZX owned by company`
      2. `new business without addons without discounts`
    - **Product Codes**: `HDFC_4W_COMPREHENSIVE,TATA_2W_THIRD_PARTY`
    - **Output**:
@@ -136,6 +152,8 @@ Include these in your scenario, in any order. Required items are marked with an 
        - `category`: `four_wheeler`
        - `journey_type`: `Rollover`
        - `registration_number`: `KA01AB1234`
+       - `make_model`: `MARUTI SWIFT`
+       - `variant`: `ZX`
        - `previous_expiry_date`: e.g., `20/05/2025`
        - `product_code`: `HDFC_4W_COMPREHENSIVE`
        - `carrier_name`: `HDFC ERGO General Insurance Co. Ltd.`
@@ -149,6 +167,8 @@ Include these in your scenario, in any order. Required items are marked with an 
        - `category`: `two_wheeler`
        - `journey_type`: `New Business`
        - `registration_number`: `KA01CD5678`
+       - `make_model`: `HONDA ACTIVA`
+       - `variant`: `Standard`
        - `previous_expiry_date`: `""`
        - `product_code`: `TATA_2W_THIRD_PARTY`
        - `carrier_name`: `Tata AIG General Insurance Co. Ltd.`
@@ -159,7 +179,7 @@ Include these in your scenario, in any order. Required items are marked with an 
 
 ## CSV Output
 
-- **Format**: Each test case is a row with columns like `Testcase_id`, `category`, `carrier_name`, etc.
+- **Format**: Each test case is a row with columns like `Testcase_id`, `category`, `carrier_name`, `make_model`, `variant`, etc.
 - **Empty Fields**: `addons`, `discounts` are `""` in empty cells.
 - **JSON Fields**: `addons`, `discounts`, `kyc`, `proposal_questions` are JSON strings (e.g., `"[{""insurance_cover_code"":""ENGINE_PROTECTION""}]"`).
 - **Dates**: Check `previous_expiry_date` for rollover cases (format `DD/MM/YYYY`).
@@ -171,6 +191,7 @@ Include these in your scenario, in any order. Required items are marked with an 
 - **Error: "Number of product codes must match number of scenarios"**: Ensure the number of codes (comma-separated) equals the number of scenarios.
 - **Error: "Generation failed: ..."**: Check if the server is running (`http://localhost:3000`) or if the product code prefix is valid. Verify scenario syntax.
 - **Empty Carrier Name**: Ensure the product code prefix (e.g., `RELIANCE`) matches a valid insurer.
+- **Incorrect Model/Variant**: Verify `model` and `variant` syntax (e.g., `model Honda Activa variant Standard`).
 - **Invalid Dates**: Dates are validated to avoid `NaN/NaN/NaN`. If issues persist, check server logs.
 - **Contact Support**: Share your scenarios, product codes, error message, and CSV output.
 

@@ -1,35 +1,5 @@
 let testData = [];
 
-const insurerMap = {
-  BAJAJ: "Bajaj Allianz General Insurance Co. Ltd.",
-  BHARTI: "Bharti AXA General Insurance Co. Ltd.",
-  CHOLAMANDALAM: "Cholamandalam MS General Insurance Co. Ltd.",
-  FUTURE: "Future Generali India Insurance Co. Ltd.",
-  HDFC: "HDFC ERGO General Insurance Co. Ltd.",
-  ICICI: "ICICI Lombard General Insurance Co. Ltd.",
-  IFFCO: "IFFCO Tokio General Insurance Co. Ltd.",
-  KOTAK: "Kotak Mahindra General Insurance Co. Ltd.",
-  LIBERTY: "Liberty General Insurance Ltd.",
-  MAGMA: "Magma HDI General Insurance Co. Ltd.",
-  NATIONAL: "National Insurance Co. Ltd.",
-  RELIANCE: "Reliance General Insurance Co. Ltd.",
-  ROYAL: "Royal Sundaram General Insurance Co. Ltd.",
-  SHRIRAM: "Shriram General Insurance Co. Ltd.",
-  SBI: "SBI General Insurance Co. Ltd.",
-  TATA: "Tata AIG General Insurance Co. Ltd.",
-  NEWINDIA: "The New India Assurance Co. Ltd.",
-  ORIENTAL: "The Oriental Insurance Co. Ltd.",
-  UNITED: "United India Insurance Co. Ltd.",
-  UNIVERSAL: "Universal Sompo General Insurance Co. Ltd.",
-  GODIGIT: "Go Digit General Insurance Ltd.",
-  ACKO: "Acko General Insurance Ltd.",
-  ZUNO: "Zuno General Insurance Ltd.",
-  RAHEJA: "Raheja QBE General Insurance Co. Ltd.",
-  NAVI: "Navi General Insurance Ltd.",
-};
-
-const insurerList = Object.values(insurerMap);
-
 const headers = [
   "Testcase_id",
   "category",
@@ -108,20 +78,6 @@ addScenarioBtn.addEventListener("click", () => {
   const scenarioText = scenarioInput.value.trim();
   if (!scenarioText) {
     showCustomDialog("Please enter a scenario.");
-    return;
-  }
-  if (
-    !scenarioText.match(/with all addons|without addons|with specified addons/i)
-  ) {
-    showCustomDialog(
-      'Scenario must specify addon instructions ("with all addons", "without addons", or "with specified addons ...").'
-    );
-    return;
-  }
-  if (!scenarioText.match(/with discounts|without discounts/i)) {
-    showCustomDialog(
-      'Scenario must specify discount instructions ("with discounts ...", "without discounts").'
-    );
     return;
   }
 
