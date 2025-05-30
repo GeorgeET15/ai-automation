@@ -173,7 +173,8 @@ function cleanMarkdownResponse(content) {
 
 function formatDate(date) {
   if (!(date instanceof Date) || isNaN(date)) {
-    date = new Date("2025-05-28");
+    logger.warn("Invalid date, using current date as fallback", { date });
+    date = new Date(); // Use current date as fallback
   }
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -181,33 +182,71 @@ function formatDate(date) {
   return `${day}/${month}/${year}`;
 }
 
-function getRandomDate(start, end) {
+function getRandomDate(start, end, scenarioType = "without_registration") {
   const startDate = new Date(start);
   const endDate = new Date(end);
+  const currentDate = new Date();
   if (isNaN(startDate) || isNaN(endDate) || startDate > endDate) {
-    logger.warn("Invalid date range, returning current date", { start, end });
-    return new Date("2025-05-28");
+    logger.warn("Invalid date range, adjusting", { start, end, scenarioType });
+    if (scenarioType === "new_business") {
+      // For new business, bias toward recent date (within 3 months)
+      const recentStart = new Date(currentDate);
+      recentStart.setMonth(currentDate.getMonth() - 3);
+      return new Date(
+        recentStart.getTime() +
+          Math.random() * (currentDate.getTime() - recentStart.getTime())
+      );
+    }
+    return new Date(currentDate); // Fallback to current date for other cases
+  }
+  if (startDate.getTime() === endDate.getTime()) {
+    return new Date(startDate); // Handle same-day case
   }
   const timeDiff = endDate.getTime() - startDate.getTime();
   const randomTime = startDate.getTime() + Math.random() * timeDiff;
   const result = new Date(randomTime);
-  return isNaN(result) ? new Date("2025-05-28") : result;
+  return isNaN(result) ? new Date() : result;
 }
 
 function parseDate(dateStr) {
   if (!dateStr || typeof dateStr !== "string") {
-    logger.warn("Invalid date string, returning null", { dateStr });
-    return null;
+    logger.warn("Invalid date string, using current date", { dateStr });
+    return new Date();
   }
   const [day, month, year] = dateStr.split("/").map(Number);
-  if (!day || !month || !year || year < 1900 || year > 2025) {
-    logger.warn("Invalid date components, returning null", { dateStr });
-    return null;
+  const currentDate = new Date();
+  if (
+    !day ||
+    !month ||
+    !year ||
+    year < 1900 ||
+    year > currentDate.getFullYear()
+  ) {
+    logger.warn("Invalid date components, using current date", { dateStr });
+    return new Date();
   }
   const date = new Date(year, month - 1, day);
-  if (isNaN(date)) {
-    logger.warn("Invalid parsed date, returning null", { dateStr });
-    return null;
+  if (isNaN(date) || date > currentDate) {
+    logger.warn("Invalid or future date, using current date", { dateStr });
+    return new Date();
+  }
+  const daysInMonth = [
+    31,
+    (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  if (day < 1 || day > daysInMonth[month - 1]) {
+    logger.warn("Invalid day for month, using first of month", { dateStr });
+    return new Date(year, month - 1, 1);
   }
   return date;
 }
@@ -356,7 +395,7 @@ app.post("/api/parse", async (req, res) => {
       allowedTags: [],
       allowedAttributes: {},
     });
-    const currentDate = formatDate(new Date("2025-05-28"));
+    const currentDate = formatDate(new Date()); // Dynamic current date
     const currentYear = new Date().getFullYear();
 
     const availableInsurers = [
@@ -372,7 +411,7 @@ app.post("/api/parse", async (req, res) => {
       scenarios: [
         {
           testcase_id: "string",
-          journey_type: ["new_business", "without_registration"], // Updated to restrict journey_type
+          journey_type: ["new_business", "without_registration"],
           product_code: "string",
           is_inspection_required: "string",
           previous_ncb: "string",
@@ -464,20 +503,25 @@ app.post("/api/parse", async (req, res) => {
     - Map "rollover", "expired", or break-in cases (e.g., "break in less than 90 days") to "without_registration".
     - Use "new_business" for new vehicle or explicitly stated new business cases.
   - **Date Handling Rules**:
-    - For vehicle age (e.g., "10 years old"), calculate \`manufacturing_year\` as current year (2025) minus the age. Ensure \`manufacturing_year\` is a 4-digit year (e.g., 2015 for a 10-year-old vehicle) and not in the future (>2025).
-    - Set \`registration_date\` (format: DD/MM/YYYY) to a random date between January 1 of \`manufacturing_year\` and December 31 of \`manufacturing_year + 1\`, ensuring it is on or after \`manufacturing_year\` and before or on ${currentDate}.
-    - For without_registration scenarios:
-      - If \`expiry_days\` is specified (e.g., "expired more than 90 days") or break-in is mentioned, calculate \`previous_policy_expiry_date\` as a date between ${currentDate} minus (\`expiry_days\` + 1) and ${currentDate} minus 91 days to ensure strict adherence.
-      - If no expiry days, set \`previous_policy_expiry_date\` to a random date between the \`registration_date\` plus 1 year and ${currentDate} minus 1 day.
+    - For vehicle age (e.g., "10 years old"), calculate \`manufacturing_year\` as current year (${currentYear}) minus the age. Ensure \`manufacturing_year\` is a 4-digit year (e.g., ${
+      currentYear - 10
+    } for a 10-year-old vehicle) and not in the future (>${currentYear}).
+    - Set \`registration_date\` (format: DD/MM/YYYY):
+      - For "new_business": Random date between 3 months before ${currentDate} and ${currentDate} to reflect a new vehicle.
+      - For "without_registration": Random date between January 1 of \`manufacturing_year\` and ${currentDate} minus 1 year, ensuring it’s after manufacturing year and allows for a policy to have expired.
+    - For "without_registration" scenarios:
+      - If \`expiry_days\` or \`break_in_days\` is specified (e.g., "expired more than 90 days"), calculate \`previous_policy_expiry_date\` as a date between ${currentDate} minus (\`expiry_days\` + 1) and ${currentDate} minus 91 days to ensure strict adherence.
+      - If no expiry days, assume a 1-year policy term: set \`previous_policy_expiry_date\` to a random date between \`registration_date\` plus 1 year and ${currentDate} minus 91 days.
       - Set \`previous_tp_policy_expiry_date\` to match \`previous_policy_expiry_date\`.
       - Set \`previous_tp_policy_start_date\` as \`previous_tp_policy_expiry_date\` minus 1 year.
-    - For new_business scenarios, set \`previous_policy_expiry_date\`, \`previous_tp_policy_expiry_date\`, and \`previous_tp_policy_start_date\` to empty strings ("").
+    - For "new_business" scenarios, set \`previous_policy_expiry_date\`, \`previous_tp_policy_expiry_date\`, and \`previous_tp_policy_start_date\` to empty strings ("").
     - Validate all dates to ensure:
       - \`registration_date\` >= \`manufacturing_year\` and <= ${currentDate}.
-      - For without_registration: \`previous_policy_expiry_date\` and \`previous_tp_policy_expiry_date\` are after \`registration_date\` + 1 year and before ${currentDate}.
+      - For "without_registration": \`previous_policy_expiry_date\` and \`previous_tp_policy_expiry_date\` are after \`registration_date\` + 1 year and strictly before ${currentDate} minus 91 days if expiry_days >= 90.
       - \`previous_tp_policy_start_date\` is exactly 1 year before \`previous_tp_policy_expiry_date\`.
+      - Account for leap years and valid days per month.
   - Use \`vehicle_type\` and \`insurance_company\` from scenario input.
-  - For without_registration, select \`previous_policy_carrier_code\` and \`previous_tp_policy_carrier_code\` from \`availableInsurers\`, ensuring they differ from \`insurance_company\`.
+  - For "without_registration", select \`previous_policy_carrier_code\` and \`previous_tp_policy_carrier_code\` from \`availableInsurers\`, ensuring they differ from \`insurance_company\`.
   - Set defaults: \`previous_ncb\`="0%", \`is_inspection_required\`="No" (unless break-in >= 90 days, then "Yes"), \`idv\`=500000 for 4W or 100000 for 2W, \`owned_by\`="Individual", \`model\`=null, \`variant\`=null if not specified.
   - For addons/discounts, use \`specified_addons\`/\`specified_discounts\` as [] if "without" is mentioned, or an array if specific ones are listed.
   - For \`proposal_questions\`, set \`manufacturing_year\` to match the scenario's \`manufacturing_year\`.
@@ -561,9 +605,9 @@ app.post("/api/generate", async (req, res) => {
       throw new Error("Scenarios are required");
     }
 
-    const currentDate = formatDate(new Date("2025-05-28"));
+    const currentDate = formatDate(new Date()); // Dynamic current date
     const currentYear = new Date().getFullYear();
-    const currentDateObj = new Date("2025-05-28");
+    const currentDateObj = new Date();
 
     const NOMINEE_QUESTIONS = [
       "nominee_first_name",
@@ -642,12 +686,24 @@ app.post("/api/generate", async (req, res) => {
       }
 
       if (!registrationDate || isNaN(registrationDate)) {
-        const startDate = new Date(`${manufacturingYear}-01-01`);
-        const endDate = new Date(`${manufacturingYear + 1}-12-31`);
-        registrationDate = getRandomDate(
-          startDate,
-          endDate > currentDateObj ? currentDateObj : endDate
-        );
+        if (scenario.journey_type === "new_business") {
+          const startDate = new Date(currentDateObj);
+          startDate.setMonth(startDate.getMonth() - 3); // Within 3 months
+          registrationDate = getRandomDate(
+            startDate,
+            currentDateObj,
+            "new_business"
+          );
+        } else {
+          const startDate = new Date(`${manufacturingYear}-01-01`);
+          const endDate = new Date(currentDateObj);
+          endDate.setFullYear(endDate.getFullYear() - 1); // At least 1 year before current
+          registrationDate = getRandomDate(
+            startDate,
+            endDate,
+            "without_registration"
+          );
+        }
       }
 
       if (registrationDate > currentDateObj) {
@@ -663,24 +719,29 @@ app.post("/api/generate", async (req, res) => {
       if (scenario.journey_type === "without_registration") {
         const minExpiryDate = new Date(registrationDate);
         minExpiryDate.setFullYear(minExpiryDate.getFullYear() + 1);
+        const maxExpiryDate = new Date(currentDateObj);
+        maxExpiryDate.setDate(maxExpiryDate.getDate() - 91);
         if (hints.break_in_days || scenario.expiry_days || hints.expiry_days) {
           const expiryDays =
             hints.break_in_days || scenario.expiry_days || hints.expiry_days;
           const startDate = new Date(currentDateObj);
           startDate.setDate(startDate.getDate() - (expiryDays + 1));
-          const endDate = new Date(currentDateObj);
-          endDate.setDate(endDate.getDate() - 91);
-          previousExpiryDate = getRandomDate(startDate, endDate);
+          previousExpiryDate = getRandomDate(
+            startDate,
+            maxExpiryDate,
+            "without_registration"
+          );
           isInspectionRequired = expiryDays >= 90 ? "Yes" : "No";
         } else {
-          previousExpiryDate = getRandomDate(minExpiryDate, currentDateObj);
+          previousExpiryDate = getRandomDate(
+            minExpiryDate,
+            maxExpiryDate,
+            "without_registration"
+          );
         }
-        previousTpExpiryDate = previousExpiryDate;
-        previousTpStartDate = new Date(
-          previousTpExpiryDate.getFullYear() - 1,
-          previousTpExpiryDate.getMonth(),
-          previousTpExpiryDate.getDate()
-        );
+        previousTpExpiryDate = new Date(previousExpiryDate);
+        previousTpStartDate = new Date(previousTpExpiryDate);
+        previousTpStartDate.setFullYear(previousTpStartDate.getFullYear() - 1);
       } else {
         previousExpiryDate = "";
         previousTpExpiryDate = "";
@@ -690,6 +751,8 @@ app.post("/api/generate", async (req, res) => {
       const rejectedQuestionKeys = [];
       const ownedBy = ["Individual", "Company"].includes(scenario.owned_by)
         ? scenario.owned_by
+        : hints.owned_by === "Company"
+        ? "Company"
         : "Individual";
       const hasPersonalAccident =
         (Array.isArray(scenario.specified_addons) &&
@@ -728,7 +791,7 @@ app.post("/api/generate", async (req, res) => {
       } else {
         for (const key of rejectedQuestionKeys) {
           if (!PREVIOUS_POLICY_QUESTIONS.includes(key)) {
-            delete filteredProposalQuestions[key]; // Delete only non-previous-insurer rejected keys
+            delete filteredProposalQuestions[key];
           }
         }
       }
@@ -866,13 +929,16 @@ app.post("/api/generate", async (req, res) => {
         addons:
           scenario.specified_addons || hints.specified_addons
             ? (scenario.specified_addons || hints.specified_addons).map(
-                (code) => ({ insurance_cover_code: code })
+                (code) => ({ insurance_cover_code: code, sa: "" })
               )
             : scenario.include_all_addons || hints.include_all_addons
-            ? staticData.addons.map((code) => ({ insurance_cover_code: code }))
+            ? staticData.addons.map((code) => ({
+                insurance_cover_code: code,
+                sa: "",
+              }))
             : [],
         discounts:
-          scenario.specified_addons || hints.specified_discounts
+          scenario.specified_discounts || hints.specified_discounts
             ? (scenario.specified_discounts || hints.specified_discounts).map(
                 (code) => ({ discount_code: code, sa: "" })
               )
@@ -928,9 +994,9 @@ app.post("/api/validate", async (req, res) => {
       throw new Error(`Invalid product code: ${product_code}`);
     }
 
-    const currentDate = formatDate(new Date("2025-05-28"));
+    const currentDate = formatDate(new Date()); // Dynamic current date
     const currentYear = new Date().getFullYear();
-    const currentDateObj = new Date("2025-05-28");
+    const currentDateObj = new Date();
 
     const availableInsurers = [
       ...new Set(
@@ -954,7 +1020,10 @@ app.post("/api/validate", async (req, res) => {
       manufacturing_year: {
         mandatory: true,
         regex: "^[2]{1}[0-9]{3}$",
-        condition: (value) => parseInt(value) <= 2025,
+        condition: (value) => {
+          const year = parseInt(value);
+          return year <= currentYear && year >= 1900; // Reasonable range
+        },
         fix: () =>
           hints.vehicle_age
             ? (currentYear - hints.vehicle_age).toString()
@@ -1037,15 +1106,79 @@ app.post("/api/validate", async (req, res) => {
           const minDate = new Date(regDate);
           minDate.setFullYear(minDate.getFullYear() + 1);
           const maxDate = new Date(currentDateObj);
-          maxDate.setDate(maxDate.getDate() - 91);
-          return date >= minDate && date <= maxDate;
+          const expiryDays =
+            hints.break_in_days ||
+            hints.expiry_days ||
+            test_data.offset_previous_expiry_date;
+          const maxExpiry =
+            expiryDays >= 90
+              ? maxDate.setDate(maxDate.getDate() - 91)
+              : maxDate.getTime();
+          return date >= minDate && date <= new Date(maxExpiry);
         },
         fix: () => {
           const minExpiryDate = parseDate(test_data.registration_date);
           minExpiryDate.setFullYear(minExpiryDate.getFullYear() + 1);
           const endDate = new Date(currentDateObj);
-          endDate.setDate(endDate.getDate() - 91);
-          return formatDate(getRandomDate(minExpiryDate, endDate));
+          const expiryDays =
+            hints.break_in_days ||
+            hints.expiry_days ||
+            test_data.offset_previous_expiry_date;
+          if (expiryDays >= 90) {
+            endDate.setDate(endDate.getDate() - 91);
+          }
+          return formatDate(
+            getRandomDate(minExpiryDate, endDate, "without_registration")
+          );
+        },
+      },
+      previous_tp_policy_expiry_date: {
+        mandatory: () => test_data.journey_type === "without_registration",
+        condition: (value) => {
+          const date = parseDate(value);
+          const regDate = parseDate(test_data.registration_date);
+          const prevExpiry = parseDate(
+            test_data.proposal_questions.previous_policy_expiry_date
+          );
+          if (!date || !regDate || !prevExpiry) return false;
+          const minDate = new Date(regDate);
+          minDate.setFullYear(minDate.getFullYear() + 1);
+          const maxDate = new Date(currentDateObj);
+          const expiryDays =
+            hints.break_in_days ||
+            hints.expiry_days ||
+            test_data.offset_previous_expiry_date;
+          const maxExpiry =
+            expiryDays >= 90
+              ? maxDate.setDate(maxDate.getDate() - 91)
+              : maxDate.getTime();
+          return (
+            date >= minDate &&
+            date <= new Date(maxExpiry) &&
+            date.getTime() === prevExpiry.getTime() // Fixed: prevExpiryDuty -> prevExpiry
+          );
+        },
+        fix: () => test_data.proposal_questions.previous_policy_expiry_date,
+      },
+      previous_tp_policy_start_date: {
+        mandatory: () => test_data.journey_type === "without_registration",
+        condition: (value) => {
+          const date = parseDate(value);
+          const expiryDate = parseDate(
+            test_data.proposal_questions.previous_tp_policy_expiry_date
+          );
+          if (!date || !expiryDate) return false;
+          const expectedStart = new Date(expiryDate);
+          expectedStart.setFullYear(expectedStart.getFullYear() - 1);
+          return date.getTime() === expectedStart.getTime();
+        },
+        fix: () => {
+          const expiryDate = parseDate(
+            test_data.proposal_questions.previous_tp_policy_expiry_date
+          );
+          const startDate = new Date(expiryDate);
+          startDate.setFullYear(startDate.getFullYear() - 1);
+          return formatDate(startDate);
         },
       },
       NO_PA_Cover: {
@@ -1083,7 +1216,9 @@ Instructions:
 - Validate test_data fields against scenario, product_code, hints, and constraints.
 - **Field Validations**:
   - journey_type: Must be either "new_business" or "without_registration". Map "rollover", "expired", or break-in cases to "without_registration". Flag as error if neither.
-  - manufacturing_year: Must be a 4-digit year <= 2025, align with hints.vehicle_age (e.g., 2015 for 10-year-old vehicle).
+  - manufacturing_year: Must be a 4-digit year <= ${currentYear}, align with hints.vehicle_age (e.g., ${
+      currentYear - 10
+    } for 10-year-old vehicle).
   - registration_date: Must be DD/MM/YYYY, >= manufacturing_year, <= ${currentDate}.
   - addons: Must match hints.specified_addons or include_all_addons; [] if "without addons".
   - discounts: Must match hints.specified_discounts; [] if "without discounts".

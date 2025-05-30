@@ -39,7 +39,10 @@ const headers = [
 ];
 
 function escapeCsvValue(value, header) {
-  if (value === null || value === undefined) return "";
+  if (value === null || value === undefined) {
+    if (header === "owned_by") return "Individual"; // Default for owned_by
+    return "";
+  }
   if (
     header === "addons" ||
     header === "discounts" ||
@@ -51,7 +54,6 @@ function escapeCsvValue(value, header) {
     if (typeof value === "object" || Array.isArray(value))
       return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
   }
-  // Explicitly handle string values like owned_by
   value = String(value);
   if (value.includes('"') || value.includes(",") || value.includes("\n")) {
     value = `"${value.replace(/"/g, '""')}"`;
@@ -66,10 +68,21 @@ const customDialog = document.getElementById("customDialog");
 const dialogMessage = document.getElementById("dialogMessage");
 const dialogCloseBtn = document.getElementById("dialogCloseBtn");
 
-function showCustomDialog(message) {
+function showCustomDialog(message, callback) {
   dialogMessage.textContent = message;
   customDialog.classList.remove("hidden");
   customDialog.classList.add("show");
+
+  const defaultClose = () => {
+    customDialog.classList.remove("show");
+    customDialog.classList.add("hidden");
+    dialogCloseBtn.onclick = defaultClose;
+  };
+
+  dialogCloseBtn.onclick = () => {
+    defaultClose();
+    if (callback) callback();
+  };
 }
 
 dialogCloseBtn.addEventListener("click", () => {
@@ -96,9 +109,9 @@ addScenarioBtn.addEventListener("click", () => {
   scenarioInput.value = "";
 
   li.querySelector(".remove-scenario-btn").addEventListener("click", () => {
-    if (confirm("Are you sure you want to remove this scenario?")) {
+    showCustomDialog("Are you sure you want to remove this scenario?", () => {
       scenarioList.removeChild(li);
-    }
+    });
   });
 });
 
