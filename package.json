@@ -12,15 +12,19 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@langchain/core": "^0.3.57",
+    "@langchain/openai": "^0.5.11",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "fs": "^0.0.1-security",
     "json5": "^2.2.3",
+    "langchain": "^0.3.27",
     "nodemon": "^3.1.10",
     "openai": "^4.103.0",
     "papaparse": "^5.5.3",
     "sanitize-html": "^2.17.0",
-    "winston": "^3.17.0"
+    "winston": "^3.17.0",
+    "zod": "^3.25.42"
   }
 }
