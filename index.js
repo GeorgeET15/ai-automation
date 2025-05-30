@@ -266,6 +266,13 @@ function preprocessScenario(text) {
   if (expiryMatch) {
     hints.expiry_days = parseInt(expiryMatch[1]);
   }
+  const breakInMatch = text.match(
+    /break\s*in\s*(?:less than)?\s*(\d+)\s*days/i
+  );
+  if (breakInMatch) {
+    hints.journey_type = "without_registration"; // Map break-in to without_registration
+    hints.break_in_days = parseInt(breakInMatch[1]);
+  }
   if (/all addons/i.test(text)) {
     hints.include_all_addons = true;
   } else if (/without addons/i.test(text)) {
@@ -301,9 +308,9 @@ function preprocessScenario(text) {
     hints.variant = variantMatch[1].toUpperCase();
   }
   if (/new\s*(?:business|vehicle)/i.test(text)) {
-    hints.journey_type = "New Business";
+    hints.journey_type = "new_business";
   } else if (/rollover/i.test(text) || /expired/i.test(text)) {
-    hints.journey_type = "Rollover";
+    hints.journey_type = "without_registration"; // Map rollover to without_registration
   }
   if (/company/i.test(text)) {
     hints.owned_by = "Company";
@@ -365,7 +372,7 @@ app.post("/api/parse", async (req, res) => {
       scenarios: [
         {
           testcase_id: "string",
-          journey_type: "string",
+          journey_type: ["new_business", "without_registration"], // Updated to restrict journey_type
           product_code: "string",
           is_inspection_required: "string",
           previous_ncb: "string",
@@ -439,41 +446,45 @@ app.post("/api/parse", async (req, res) => {
     };
 
     const prompt = `
-      Parse the natural language scenario for 4W/2W insurance test cases, extracting relevant fields based on context and insurance domain knowledge. Use the provided hints to guide interpretation. Output JSON strictly adhering to the schema below, with no explanations or Markdown.
+  Parse the natural language scenario for 4W/2W insurance test cases, extracting relevant fields based on context and insurance domain knowledge. Use the provided hints to guide interpretation. Output JSON strictly adhering to the schema below, with no explanations or Markdown.
 
-      Inputs:
-      - Scenarios: ${JSON.stringify(enrichedScenarios)}
-      - Proposal Overrides: ${sanitizedOverrides}
-      - Static Data: ${JSON.stringify(staticData)}
-      - Available Insurers: ${JSON.stringify(availableInsurers)}
-      - Current Date: ${currentDate}
-      - Current Year: ${currentYear}
-      - Output Schema: ${JSON.stringify(outputSchema)}
+  Inputs:
+  - Scenarios: ${JSON.stringify(enrichedScenarios)}
+  - Proposal Overrides: ${sanitizedOverrides}
+  - Static Data: ${JSON.stringify(staticData)}
+  - Available Insurers: ${JSON.stringify(availableInsurers)}
+  - Current Date: ${currentDate}
+  - Current Year: ${currentYear}
+  - Output Schema: ${JSON.stringify(outputSchema)}
 
-      Instructions:
-      - Interpret the scenario text and hints to determine fields like journey type, vehicle age, policy status, addons, and discounts.
-      - **Date Handling Rules**:
-        - For vehicle age (e.g., "10 years old"), calculate \`manufacturing_year\` as current year (2025) minus the age. Ensure \`manufacturing_year\` is a 4-digit year (e.g., 2015 for a 10-year-old vehicle) and not in the future (>2025).
-        - Set \`registration_date\` (format: DD/MM/YYYY) to a random date between January 1 of \`manufacturing_year\` and December 31 of \`manufacturing_year + 1\`, ensuring it is on or after \`manufacturing_year\` and before or on ${currentDate}.
-        - For Rollover scenarios:
-          - If \`expiry_days\` is specified (e.g., "expired more than 90 days"), calculate \`previous_policy_expiry_date\` as a date between ${currentDate} minus (\`expiry_days\` + 1) and ${currentDate} minus 91 days to ensure strict adherence.
-          - If \`expiry_days\` is not specified, set \`previous_policy_expiry_date\` to a random date between the \`registration_date\` plus 1 year and ${currentDate} minus 1 day.
-          - Set \`previous_tp_policy_expiry_date\` to match \`previous_policy_expiry_date\`.
-          - Set \`previous_tp_policy_start_date\` as \`previous_tp_policy_expiry_date\` minus 1 year.
-        - For New Business scenarios, set \`previous_policy_expiry_date\`, \`previous_tp_policy_expiry_date\`, and \`previous_tp_policy_start_date\` to empty strings ("").
-        - Validate all dates to ensure:
-          - \`registration_date\` >= \`manufacturing_year\` and <= ${currentDate}.
-          - \`previous_policy_expiry_date\` and \`previous_tp_policy_expiry_date\` are after \`registration_date\` + 1 year and before ${currentDate} for Rollover.
-          - \`previous_tp_policy_start_date\` is exactly 1 year before \`previous_tp_policy_expiry_date\`.
-      - Use \`vehicle_type\` and \`insurance_company\` from scenario input.
-      - For Rollover, select \`previous_policy_carrier_code\` and \`previous_tp_policy_carrier_code\` from \`availableInsurers\`, ensuring they differ from \`insurance_company\`.
-      - Set defaults: \`previous_ncb\`="0%", \`is_inspection_required\`="No", \`idv\`=500000 for 4W or 100000 for 2W, \`owned_by\`="Individual", \`model\`=null, \`variant\`=null if not specified.
-      - For addons/discounts, use \`specified_addons\`/\`specified_discounts\` as [] if "without" is mentioned, or an array if specific ones are listed.
-      - For \`proposal_questions\`, set \`manufacturing_year\` to match the scenario's \`manufacturing_year\`.
-      - Adhere to constraints as per the original code.
+  Instructions:
+  - Interpret the scenario text and hints to determine fields like journey type, vehicle age, policy status, addons, and discounts.
+  - **Journey Type**:
+    - Only two valid journey types: "new_business" or "without_registration".
+    - Map "rollover", "expired", or break-in cases (e.g., "break in less than 90 days") to "without_registration".
+    - Use "new_business" for new vehicle or explicitly stated new business cases.
+  - **Date Handling Rules**:
+    - For vehicle age (e.g., "10 years old"), calculate \`manufacturing_year\` as current year (2025) minus the age. Ensure \`manufacturing_year\` is a 4-digit year (e.g., 2015 for a 10-year-old vehicle) and not in the future (>2025).
+    - Set \`registration_date\` (format: DD/MM/YYYY) to a random date between January 1 of \`manufacturing_year\` and December 31 of \`manufacturing_year + 1\`, ensuring it is on or after \`manufacturing_year\` and before or on ${currentDate}.
+    - For without_registration scenarios:
+      - If \`expiry_days\` is specified (e.g., "expired more than 90 days") or break-in is mentioned, calculate \`previous_policy_expiry_date\` as a date between ${currentDate} minus (\`expiry_days\` + 1) and ${currentDate} minus 91 days to ensure strict adherence.
+      - If no expiry days, set \`previous_policy_expiry_date\` to a random date between the \`registration_date\` plus 1 year and ${currentDate} minus 1 day.
+      - Set \`previous_tp_policy_expiry_date\` to match \`previous_policy_expiry_date\`.
+      - Set \`previous_tp_policy_start_date\` as \`previous_tp_policy_expiry_date\` minus 1 year.
+    - For new_business scenarios, set \`previous_policy_expiry_date\`, \`previous_tp_policy_expiry_date\`, and \`previous_tp_policy_start_date\` to empty strings ("").
+    - Validate all dates to ensure:
+      - \`registration_date\` >= \`manufacturing_year\` and <= ${currentDate}.
+      - For without_registration: \`previous_policy_expiry_date\` and \`previous_tp_policy_expiry_date\` are after \`registration_date\` + 1 year and before ${currentDate}.
+      - \`previous_tp_policy_start_date\` is exactly 1 year before \`previous_tp_policy_expiry_date\`.
+  - Use \`vehicle_type\` and \`insurance_company\` from scenario input.
+  - For without_registration, select \`previous_policy_carrier_code\` and \`previous_tp_policy_carrier_code\` from \`availableInsurers\`, ensuring they differ from \`insurance_company\`.
+  - Set defaults: \`previous_ncb\`="0%", \`is_inspection_required\`="No" (unless break-in >= 90 days, then "Yes"), \`idv\`=500000 for 4W or 100000 for 2W, \`owned_by\`="Individual", \`model\`=null, \`variant\`=null if not specified.
+  - For addons/discounts, use \`specified_addons\`/\`specified_discounts\` as [] if "without" is mentioned, or an array if specific ones are listed.
+  - For \`proposal_questions\`, set \`manufacturing_year\` to match the scenario's \`manufacturing_year\`.
+  - Adhere to constraints as per the original code.
 
-      Output: JSON per the schema, e.g., {"scenarios": [objects], "proposal_questions": object}.
-    `;
+  Output: JSON per the schema, e.g., {"scenarios": [objects], "proposal_questions": object}.
+`;
 
     logger.info("Sending /api/parse request", { scenarios: enrichedScenarios });
     const response = await openai.chat.completions.create({
@@ -512,6 +523,27 @@ app.post("/api/parse", async (req, res) => {
       parsedContent.scenarios[0].manufacturing_year;
     parsedContent.proposal_questions.registration_number =
       generateRegistrationNumber();
+
+    parsedContent.scenarios.forEach((scenario) => {
+      if (scenario.journey_type === "new_business") {
+        const previousInsurerFields = [
+          "previous_policy_carrier_code",
+          "previous_policy_type",
+          "previous_policy_number",
+          "previous_tp_policy_number",
+          "previous_tp_policy_carrier_code",
+          "previous_tp_policy_expiry_date",
+          "previous_tp_policy_start_date",
+          "previous_policy_expiry_date",
+        ];
+        previousInsurerFields.forEach((field) => {
+          if (parsedContent.proposal_questions[field] !== "") {
+            logger.info(`Clearing ${field} for new_business`, { field });
+            parsedContent.proposal_questions[field] = "";
+          }
+        });
+      }
+    });
     res.json(parsedContent);
   } catch (error) {
     logger.error("Parse endpoint error", {
@@ -584,7 +616,7 @@ app.post("/api/generate", async (req, res) => {
         .filter((insurer) => insurer !== insurerName);
       let previousInsurer = insurerName;
       if (
-        scenario.journey_type === "Rollover" &&
+        scenario.journey_type === "without_registration" &&
         availableInsurers.length > 0
       ) {
         previousInsurer =
@@ -627,16 +659,19 @@ app.post("/api/generate", async (req, res) => {
       }
 
       let previousExpiryDate, previousTpExpiryDate, previousTpStartDate;
-      if (scenario.journey_type === "Rollover") {
+      let isInspectionRequired = scenario.is_inspection_required || "No";
+      if (scenario.journey_type === "without_registration") {
         const minExpiryDate = new Date(registrationDate);
         minExpiryDate.setFullYear(minExpiryDate.getFullYear() + 1);
-        if (scenario.expiry_days || hints.expiry_days) {
-          const expiryDays = scenario.expiry_days || hints.expiry_days;
+        if (hints.break_in_days || scenario.expiry_days || hints.expiry_days) {
+          const expiryDays =
+            hints.break_in_days || scenario.expiry_days || hints.expiry_days;
           const startDate = new Date(currentDateObj);
           startDate.setDate(startDate.getDate() - (expiryDays + 1));
           const endDate = new Date(currentDateObj);
           endDate.setDate(endDate.getDate() - 91);
           previousExpiryDate = getRandomDate(startDate, endDate);
+          isInspectionRequired = expiryDays >= 90 ? "Yes" : "No";
         } else {
           previousExpiryDate = getRandomDate(minExpiryDate, currentDateObj);
         }
@@ -653,10 +688,6 @@ app.post("/api/generate", async (req, res) => {
       }
 
       const rejectedQuestionKeys = [];
-      const isNotSure =
-        scenario.journey_type === "Not Sure" &&
-        (scenario.product_code.includes("COMPREHENSIVE") ||
-          scenario.product_code.includes("THIRD_PARTY"));
       const ownedBy = ["Individual", "Company"].includes(scenario.owned_by)
         ? scenario.owned_by
         : "Individual";
@@ -667,7 +698,7 @@ app.post("/api/generate", async (req, res) => {
         (hints.include_all_addons &&
           staticData.addons.includes("PERSONAL_ACCIDENT"));
 
-      if (scenario.journey_type === "New Business" || isNotSure) {
+      if (scenario.journey_type === "new_business") {
         rejectedQuestionKeys.push(...PREVIOUS_POLICY_QUESTIONS);
       }
       if (ownedBy === "Individual") {
@@ -687,8 +718,19 @@ app.post("/api/generate", async (req, res) => {
         ...staticData.default_proposal_questions,
         ...proposal_questions,
       };
-      for (const key of rejectedQuestionKeys) {
-        delete filteredProposalQuestions[key];
+      if (scenario.journey_type === "new_business") {
+        PREVIOUS_POLICY_QUESTIONS.forEach((key) => {
+          if (filteredProposalQuestions[key] !== "") {
+            logger.info(`Clearing ${key} for new_business`, { key });
+            filteredProposalQuestions[key] = "";
+          }
+        });
+      } else {
+        for (const key of rejectedQuestionKeys) {
+          if (!PREVIOUS_POLICY_QUESTIONS.includes(key)) {
+            delete filteredProposalQuestions[key]; // Delete only non-previous-insurer rejected keys
+          }
+        }
       }
 
       filteredProposalQuestions.registration_number =
@@ -742,7 +784,7 @@ app.post("/api/generate", async (req, res) => {
               city: "Bangalore",
               state: "Karnataka",
             };
-      if (scenario.journey_type === "Rollover") {
+      if (scenario.journey_type === "without_registration") {
         filteredProposalQuestions.previous_policy_carrier_code =
           previousInsurer;
         filteredProposalQuestions.previous_policy_type = "comprehensive";
@@ -785,7 +827,8 @@ app.post("/api/generate", async (req, res) => {
             "_"
           )}_${vehicleType}_${scenario.journey_type.toUpperCase()}_01`,
         category: vehicleType === "4W" ? "four_wheeler" : "two_wheeler",
-        journey_type: scenario.journey_type || hints.journey_type || "Rollover",
+        journey_type:
+          scenario.journey_type || hints.journey_type || "without_registration",
         registration_number: filteredProposalQuestions.registration_number,
         make_model: makeModel,
         variant: variant,
@@ -797,8 +840,10 @@ app.post("/api/generate", async (req, res) => {
           ? formatDate(previousExpiryDate)
           : "",
         offset_previous_expiry_date:
-          scenario.expiry_days || hints.expiry_days
-            ? String(scenario.expiry_days || hints.expiry_days)
+          scenario.expiry_days || hints.expiry_days || hints.break_in_days
+            ? String(
+                scenario.expiry_days || hints.expiry_days || hints.break_in_days
+              )
             : "",
         previous_insurer: previousInsurer,
         previous_tp_expiry_date: previousTpExpiryDate
@@ -807,7 +852,8 @@ app.post("/api/generate", async (req, res) => {
         offset_previous_tp_expiry_date: "",
         previous_tp_insurer: previousInsurer,
         not_sure: "",
-        know_previous_tp_expiry_date: "Yes",
+        know_previous_tp_expiry_date:
+          scenario.journey_type === "without_registration" ? "Yes" : "",
         not_sure_previous_tp_expiry_date: "",
         claim_taken: scenario.claim_taken || "No",
         previous_ncb: scenario.previous_ncb || "0%",
@@ -846,7 +892,7 @@ app.post("/api/generate", async (req, res) => {
           : [staticData.kyc_format[0]],
         kyc_verification: "Pending",
         proposal_questions: filteredProposalQuestions,
-        is_inspection_required: scenario.is_inspection_required || "No",
+        is_inspection_required: isInspectionRequired,
         carrier_name: insurerName,
       };
     });
@@ -983,7 +1029,7 @@ app.post("/api/validate", async (req, res) => {
         }),
       },
       previous_policy_expiry_date: {
-        mandatory: () => test_data.journey_type === "Rollover",
+        mandatory: () => test_data.journey_type === "without_registration",
         condition: (value) => {
           const date = parseDate(value);
           const regDate = parseDate(test_data.registration_date);
@@ -1036,27 +1082,26 @@ Inputs:
 Instructions:
 - Validate test_data fields against scenario, product_code, hints, and constraints.
 - **Field Validations**:
-  - journey_type: Must match hints.journey_type or scenario intent (e.g., "Rollover" for expired cases). Skip validation if already correct.
+  - journey_type: Must be either "new_business" or "without_registration". Map "rollover", "expired", or break-in cases to "without_registration". Flag as error if neither.
   - manufacturing_year: Must be a 4-digit year <= 2025, align with hints.vehicle_age (e.g., 2015 for 10-year-old vehicle).
   - registration_date: Must be DD/MM/YYYY, >= manufacturing_year, <= ${currentDate}.
   - addons: Must match hints.specified_addons or include_all_addons; [] if "without addons".
   - discounts: Must match hints.specified_discounts; [] if "without discounts".
   - proposer_pan: Must be exactly "${HARD_CODED_PAN}" if owned_by="Individual".
   - proposer_dob: Must be exactly "${HARD_CODED_DOB}" if owned_by="Individual".
-  - For Rollover: previous_policy_expiry_date and previous_tp_policy_expiry_date must be after registration_date + 1 year and strictly before ${currentDate} minus 91 days if expiry_days >= 90.
-  - For New Business: No previous_policy fields should be present.
+  - For without_registration: previous_policy_expiry_date and previous_tp_policy_expiry_date must be after registration_date + 1 year and strictly before ${currentDate} minus 91 days if expiry_days >= 90.
+  - For new_business: No previous_policy fields should be present.
   - idv: 100000 for 2W, 500000 for 4W unless specified.
   - kyc: Must match staticData.kyc_format and hints.specified_kyc.
   - NO_PA_Cover: Required if no PERSONAL_ACCIDENT addon and owned_by="Individual"; nominee fields must be absent in this case.
   - company_gstin, company_name: Must be absent if owned_by="Individual".
 - **Error Format**: { "field": "string", "message": "string" }
-  - Example: { "field": "proposer_pan", "message": "Must be ${HARD_CODED_PAN}" }
 - **Fix Format**: { "field": "string", "value": "any", "reason": "string" }
-  - Use proposalConstraints.fix() for fixes.
-  - Example: { "field": "proposer_pan", "value": "${HARD_CODED_PAN}", "reason": "Enforced hardcoded PAN" }
+  - Use proposalConstraints for fixes.
+  - Example: { "field": "proposer_pan", "value": "${HARD_CODED_PAN}", "reason": "Enforced standard PAN" }
 - **Date Handling**:
-  - registration_date: Align with manufacturing_year.
-  - previous_expiry_date: For Rollover with expiry_days >= 90, set between registration_date + 1 year and ${currentDate} minus 91 days.
+  - registration_date: Between manufacturing_year and ${currentDate}.
+  - previous_expiry_date: For without_registration with expiry_days >= 90, set between registration_date + 1 year and ${currentDate} minus 91 days.
 - Output:
   {
     "is_valid": boolean,
@@ -1073,9 +1118,12 @@ Instructions:
         {
           role: "system",
           content:
-            "Output valid JSON per the validation schema, validating test_data for insurance test cases. Use structured errors and fixes. No explanations, no Markdown.",
+            "Output JSON per the validation schema, validating test_data for insurance test cases. Use structured errors and fixes. No explanations, no Markdown.",
         },
-        { role: "user", content: aiPrompt },
+        {
+          role: "user",
+          content: aiPrompt,
+        },
       ],
       max_tokens: 1500,
     });
@@ -1083,15 +1131,35 @@ Instructions:
     const aiValidation = cleanMarkdownResponse(
       aiResponse.choices[0].message.content
     );
-    logger.info("AI validation response", { aiValidation });
-
-    console.log("AI Validation: ", aiValidation);
+    logger.info("AI Validation response", { aiValidation });
 
     const errors = [];
     const fixes = [];
     let validatedProposalQuestions = { ...test_data.proposal_questions };
 
-    Object.entries(proposalConstraints).forEach(([field, constraint]) => {
+    // Validate journey_type
+    if (
+      !["new_business", "without_registration"].includes(test_data.journey_type)
+    ) {
+      errors.push({
+        field: "journey_type",
+        message: `Invalid journey_type: must be 'new_business' or 'without_registration'`,
+      });
+      fixes.push({
+        field: "journey_type",
+        value:
+          hints.journey_type === "new_business"
+            ? "new_business"
+            : "without_registration",
+        reason: "Enforced valid journey_type based on scenario",
+      });
+      test_data.journey_type =
+        hints.journey_type === "new_business"
+          ? "new_business"
+          : "without_registration";
+    }
+
+    for (const [field, constraint] of Object.entries(proposalConstraints)) {
       const value = validatedProposalQuestions[field];
       const isMandatory =
         typeof constraint.mandatory === "function"
@@ -1126,7 +1194,36 @@ Instructions:
           validatedProposalQuestions[field] = constraint.fix();
         }
       }
-    });
+    }
+
+    if (test_data.journey_type === "new_business") {
+      const previousInsurerFields = [
+        "previous_policy_carrier_code",
+        "previous_policy_type",
+        "previous_policy_number",
+        "previous_tp_policy_number",
+        "previous_tp_policy_carrier_code",
+        "previous_tp_policy_expiry_date",
+        "previous_tp_policy_start_date",
+        "previous_policy_expiry_date",
+      ];
+      previousInsurerFields.forEach((field) => {
+        const value = validatedProposalQuestions[field];
+        if (value !== undefined && value !== "") {
+          errors.push({
+            field: `proposal_questions.${field}`,
+            message: `${field} must be empty for new_business`,
+          });
+          fixes.push({
+            field: `proposal_questions.${field}`,
+            value: "",
+            reason: `Cleared ${field} for new_business scenario`,
+          });
+          logger.info(`Clearing ${field} for new_business`, { field });
+          validatedProposalQuestions[field] = "";
+        }
+      });
+    }
 
     let validatedData = {
       ...test_data,
@@ -1159,6 +1256,8 @@ Instructions:
       validated_data: validatedData,
     };
 
+    console.log("Validated test_data:", validatedData);
+
     res.json(response);
   } catch (error) {
     logger.error("Validate endpoint error", {
@@ -1171,4 +1270,6 @@ Instructions:
 
 const port =
   process.env.NODE_ENV === "production" ? process.env.PORT || 80 : 3000;
-app.listen(port, () => logger.info(`Server running on port ${port}`));
+app.listen(port, () => {
+  logger.info(`Server running on port ${port}`);
+});
