@@ -40,15 +40,18 @@ const headers = [
 
 function escapeCsvValue(value, header) {
   if (value === null || value === undefined) return "";
-  if (header === "addons" || header === "discounts") {
+  if (
+    header === "addons" ||
+    header === "discounts" ||
+    header === "kyc" ||
+    header === "proposal_questions"
+  ) {
     if (Array.isArray(value) && value.length === 0) return "";
     if (value === "") return "";
-    if (typeof value === "object")
+    if (typeof value === "object" || Array.isArray(value))
       return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
   }
-  if (typeof value === "object" && value !== null) {
-    return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
-  }
+  // Explicitly handle string values like owned_by
   value = String(value);
   if (value.includes('"') || value.includes(",") || value.includes("\n")) {
     value = `"${value.replace(/"/g, '""')}"`;
@@ -104,15 +107,18 @@ document.getElementById("downloadBtn").onclick = () => {
     showCustomDialog("No test data available to download.");
     return;
   }
-  const csvRows = testData.map((row) =>
-    headers.map((h) => escapeCsvValue(row[h], h)).join(",")
-  );
+  console.log("Generating CSV with testData:", testData); // Debug: Log testData
+  const csvRows = testData.map((row) => {
+    const rowValues = headers.map((h) => escapeCsvValue(row[h], h));
+    console.log("CSV row values:", rowValues); // Debug: Log row values
+    return rowValues.join(",");
+  });
   const csv = headers.join(",") + "\n" + csvRows.join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "test_data.csv";
+  a.download = "test_data_with_validation.csv";
   a.click();
   URL.revokeObjectURL(url);
 };
@@ -124,12 +130,16 @@ document.getElementById("inputForm").addEventListener("submit", async (e) => {
   const results = document.getElementById("results");
   const generateBtn = document.getElementById("generateBtn");
   const tbody = document.querySelector("#dataTable tbody");
+  const success = document.getElementById("success");
+  const validationLoading = document.getElementById("validationLoading");
 
   if (generateBtn.disabled) return;
 
   loading.classList.remove("hidden");
   error.classList.add("hidden");
   results.classList.add("hidden");
+  success.classList.add("hidden");
+  validationLoading.classList.add("hidden");
   generateBtn.disabled = true;
 
   try {
@@ -154,9 +164,8 @@ document.getElementById("inputForm").addEventListener("submit", async (e) => {
       throw new Error("Product code count mismatch");
     }
 
-    const proposalOverrides = document
-      .getElementById("proposal_overrides")
-      .value.trim();
+    const proposalOverrides =
+      document.getElementById("proposal_overrides").value.trim() || "{}";
 
     // Call /api/parse
     const parseResponse = await fetch("http://localhost:3000/api/parse", {
@@ -199,19 +208,69 @@ document.getElementById("inputForm").addEventListener("submit", async (e) => {
       throw new Error(err.error || "Failed to generate test data");
     }
 
-    testData = await generateResponse.json();
+    let generatedData = await generateResponse.json();
 
-    if (!Array.isArray(testData) || !testData.length) {
+    if (!Array.isArray(generatedData) || !generatedData.length) {
       throw new Error("Invalid test data format");
     }
 
+    // Show generated success message
+    loading.classList.add("hidden");
+    success.classList.remove("hidden");
+
+    // Show validation loader
+    validationLoading.classList.remove("hidden");
+
+    // Call /api/validate for each test case
+    for (let i = 0; i < generatedData.length; i++) {
+      const testCase = generatedData[i];
+      const scenario = scenarioInputs[i];
+      const productCode = productCodes[i];
+
+      const validateResponse = await fetch(
+        "http://localhost:3000/api/validate",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scenario,
+            product_code: productCode,
+            test_data: testCase,
+          }),
+        }
+      );
+
+      if (!validateResponse.ok) {
+        const err = await validateResponse.json();
+        throw new Error(
+          err.error || `Failed to validate test case ${testCase.Testcase_id}`
+        );
+      }
+
+      const validationResult = await validateResponse.json();
+      // Update entire test case with validated_data
+      generatedData[i] = {
+        ...testCase,
+        ...validationResult.validated_data,
+        is_valid: validationResult.is_valid,
+      };
+    }
+
+    testData = generatedData;
+    console.log("Updated testData:", testData); // Debug: Log testData to confirm owned_by
+
+    // Update table
     tbody.innerHTML = "";
     testData.forEach((row) => {
       const tr = document.createElement("tr");
       tr.innerHTML = headers
         .map((h) => {
           let value = row[h] ?? "";
-          if (typeof value === "object" && value !== null) {
+          if (h === "is_valid") {
+            value = value ? "Yes" : "No";
+          } else if (h === "owned_by") {
+            value = String(value || "Individual"); // Ensure owned_by is displayed
+          } else if (typeof value === "object" && value !== null) {
             value = JSON.stringify(value);
           }
           return `<td class="px-4 py-3 text-sm text-gray-800">${value}</td>`;
@@ -222,10 +281,12 @@ document.getElementById("inputForm").addEventListener("submit", async (e) => {
 
     results.classList.remove("hidden");
   } catch (err) {
-    error.textContent = "Generation failed: " + err.message;
+    error.textContent = "Operation failed: " + err.message;
     error.classList.remove("hidden");
   } finally {
     loading.classList.add("hidden");
+    validationLoading.classList.add("hidden");
+    success.classList.add("hidden");
     generateBtn.disabled = false;
   }
 });

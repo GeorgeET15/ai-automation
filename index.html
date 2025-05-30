@@ -31,18 +31,56 @@
         transform: translateY(-1px);
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
       }
+      #dataTable {
+        border-collapse: collapse;
+        width: 100%;
+      }
       #dataTable th,
       #dataTable td {
-        padding: 14px 18px;
+        padding: 12px 16px;
+        text-align: left;
         white-space: nowrap;
         line-height: 1.5;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        border-right: 1px solid rgba(0, 0, 0, 0.1);
+      }
+      #dataTable th:last-child,
+      #dataTable td:last-child {
+        border-right: none;
+      }
+      #dataTable th {
+        font-weight: 600;
+        color: #1f2937;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+      }
+      #dataTable td {
+        color: #374151;
+        font-size: 0.875rem;
+      }
+      #dataTable tbody tr {
+        transition: background-color 0.2s ease;
+      }
+      #dataTable tbody tr:hover {
+        background-color: #f3f4f6;
+      }
+      #dataTable tbody tr:nth-child(even) {
+        background-color: #fafafa;
       }
       #dataTable thead {
         position: sticky;
         top: 0;
         z-index: 10;
-        background: rgba(249, 250, 251, 0.95);
-        backdrop-filter: blur(5px);
+        background: rgba(249, 250, 251, 0.98);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+      }
+      #dataTable th:first-child {
+        border-top-left-radius: 8px;
+      }
+      #dataTable th:last-child {
+        border-top-right-radius: 8px;
       }
       #scenarioList li {
         transition: background-color 0.2s ease;
@@ -73,9 +111,12 @@
         white-space: normal;
         width: 200px;
         text-align: center;
+        opacity: 0;
+        transition: opacity 0.2s ease, visibility 0.2s ease;
       }
       .tooltip:hover .tooltip-text {
         visibility: visible;
+        opacity: 1;
       }
       #customDialog {
         background: rgba(255, 255, 255, 0.95);
@@ -84,7 +125,7 @@
         transition: opacity 0.3s ease, transform 0.3s ease;
         transform: scale(0.95);
       }
-      #customDialog.show {
+      #show.customDialog {
         transform: scale(1);
         opacity: 1;
       }
@@ -95,18 +136,31 @@
         .input-group {
           flex-direction: column;
         }
+        #dataTable {
+          display: block;
+          overflow-x: auto;
+        }
         #dataTable tr {
           display: flex;
           flex-direction: column;
           background: white;
           padding: 1rem;
           border-radius: 0.75rem;
-          margin-bottom: 0.5rem;
+          margin-bottom: 0.75rem;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
         }
         #dataTable th,
         #dataTable td {
           display: block;
           text-align: left;
+          padding: 8px 12px;
+          font-size: 0.875rem;
+          border-right: none;
+          border-bottom: none;
+        }
+        #dataTable th {
+          background: #f9fafb;
+          font-weight: 600;
         }
         #dataTable
           th:not(
@@ -128,6 +182,11 @@
           ) {
           display: none;
         }
+        #dataTable thead {
+          position: static;
+          background: none;
+          backdrop-filter: none;
+        }
       }
     </style>
   </head>
@@ -144,9 +203,8 @@
           <label
             for="scenarioInput"
             class="block text-sm font-medium text-gray-700 mb-2 leading-6"
+            >Scenario</label
           >
-            Scenario
-          </label>
           <div class="input-group flex flex-col md:flex-row gap-3">
             <input
               type="text"
@@ -157,7 +215,7 @@
             <button
               type="button"
               id="addScenarioBtn"
-              class="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              class="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
             >
               Add
             </button>
@@ -165,9 +223,8 @@
           <label
             for="productCodeInput"
             class="block text-sm font-medium text-gray-700 mt-4 mb-2 leading-6"
+            >Product Code</label
           >
-            Product Code
-          </label>
           <input
             type="text"
             id="productCodeInput"
@@ -181,14 +238,13 @@
           <label
             for="proposal_overrides"
             class="block text-sm font-medium text-gray-700 mb-2 leading-6"
+            >Proposal Overrides</label
           >
-            Proposal Overrides
-          </label>
           <textarea
             id="proposal_overrides"
             name="proposal_overrides"
             rows="5"
-            class="block w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-800 focus:border-blue-500 focus:ring-0 placeholder-gray-400 leading-6 resize-y"
+            class="block w-full rounded-xl border bg-white border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-800 focus:border-blue-500 focus:ring-0 placeholder-gray-400 leading-6 resize-y"
             placeholder="e.g., Set manufacturing year to 2024, proposer first name to George"
           ></textarea>
         </div>
@@ -225,10 +281,39 @@
           Generating test data...
         </p>
       </div>
+      <div id="validationLoading" class="hidden text-center mt-8">
+        <svg
+          class="animate-spin h-8 w-8 mx-auto text-blue-500"
+          viewBox="0 0 24 24"
+        >
+          <circle
+            class="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            stroke-width="4"
+          ></circle>
+          <path
+            class="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8v8H4z"
+          ></path>
+        </svg>
+        <p class="text-gray-600 text-sm mt-2 leading-6">
+          Validating and correcting errors...
+        </p>
+      </div>
       <div
         id="error"
         class="hidden text-center mt-6 bg-red-50 text-red-600 p-4 rounded-xl text-sm leading-6"
       ></div>
+      <div
+        id="success"
+        class="hidden text-center mt-6 bg-green-50 text-green-600 p-4 rounded-xl text-sm leading-6"
+      >
+        Test data generated successfully!
+      </div>
       <div
         id="customDialog"
         class="hidden fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50"
@@ -321,8 +406,7 @@
                   scope="col"
                   class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider tooltip"
                 >
-                  Offset Previous Expiry Date
-                  <span class="tooltip-text"
+                  Offset Previous Expiry Date<span class="tooltip-text"
                     >Days offset from previous expiry for testing
                     scenarios</span
                   >
@@ -343,8 +427,7 @@
                   scope="col"
                   class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider tooltip"
                 >
-                  Offset Previous TP Expiry Date
-                  <span class="tooltip-text"
+                  Offset Previous TP Expiry Date<span class="tooltip-text"
                     >Days offset for third-party expiry date</span
                   >
                 </th>
@@ -412,8 +495,7 @@
                   scope="col"
                   class="px-4 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider tooltip"
                 >
-                  NCB Two
-                  <span class="tooltip-text"
+                  NCB Two<span class="tooltip-text"
                     >No-Claim Bonus for second policy aspect</span
                   >
                 </th>
@@ -484,12 +566,6 @@
             Download CSV
           </button>
         </div>
-      </div>
-      <div
-        id="success"
-        class="hidden text-center mt-6 bg-green-50 text-green-600 p-4 rounded-xl text-sm leading-6"
-      >
-        Test data generated successfully!
       </div>
     </div>
     <script src="script.js"></script>
